@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, baixarBlob, mensagemDeErro } from '../api';
-import { Carregando, Erro, Modal, Pill, useAcao, useCarregar } from '../components/Basicos';
+import { api, baixarBlob, mensagemDeErro, semConexao } from '../api';
+import { Carregando, Erro, Modal, Pill, useAcao } from '../components/Basicos';
+import { useFila } from '../components/Conexao';
+import { fila, type Operacao } from '../fila';
 import { dataHora, RESULTADO_VISTORIA } from '../fluxo';
 import type { ResultadoItem } from '../tipos';
 
@@ -41,8 +43,8 @@ const RESULTADOS: { valor: ResultadoItem; rotulo: string; tom: string }[] = [
   { valor: 'NAO_SE_APLICA', rotulo: 'N/A', tom: 'neutro' },
 ];
 
-// Reduz a foto no próprio aparelho antes de enviar: as fotos de celular têm
-// vários MB e a rede da obra costuma ser ruim.
+// Reduz a foto no próprio aparelho antes de guardar: as fotos de celular têm
+// vários MB, e é a versão reduzida que fica na fila e vai para o servidor.
 async function reduzir(arquivo: File, maximo = 1600): Promise<Blob> {
   try {
     const imagem = await createImageBitmap(arquivo);
@@ -61,45 +63,117 @@ async function reduzir(arquivo: File, maximo = 1600): Promise<Blob> {
 export default function Vistoria() {
   const { id } = useParams();
   const navegar = useNavigate();
-  const { dados, erro, carregando, recarregar } = useCarregar<VistoriaCompleta>(
-    async () => (await api.get(`/vistorias/${id}`)).data,
-    [id],
-  );
-  const [itens, setItens] = useState<Item[]>([]);
-  const [aviso, setAviso] = useState('');
+  const f = useFila();
+  const [dados, setDados] = useState<VistoriaCompleta | null>(null);
+  const [erro, setErro] = useState('');
+  // Quando a tela mostra a cópia guardada no aparelho (sem sinal na abertura)
+  const [copiaDe, setCopiaDe] = useState<number | null>(null);
   const [acompanhante, setAcompanhante] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [cancelando, setCancelando] = useState(false);
   const concluir = useAcao();
+  const versao = useRef(0);
+
+  const opsDaVistoria = useMemo(() => f.ops.filter((o) => o.vistoriaId === id), [f.ops, id]);
+  const naFila = opsDaVistoria.filter((o) => !o.erro);
+  const recusadas = opsDaVistoria.filter((o) => o.erro);
+
+  async function carregar() {
+    const minha = ++versao.current;
+    try {
+      const { data } = await api.get<VistoriaCompleta>(`/vistorias/${id}`, { timeout: 15000 });
+      if (minha !== versao.current) return;
+      // O que ainda está na fila é mais novo do que o servidor conhece
+      const pendentes = fila.estado().ops.filter((o) => o.vistoriaId === id && o.tipo === 'item' && !o.erro);
+      for (const op of pendentes) {
+        const item = data.itens.find((i) => i.id === op.itemId);
+        if (item && op.tipo === 'item') {
+          if (op.mudanca.resultado !== undefined) item.resultado = op.mudanca.resultado;
+          if (op.mudanca.observacao !== undefined) item.observacao = op.mudanca.observacao || null;
+        }
+      }
+      setDados(data);
+      setCopiaDe(null);
+      setErro('');
+      if (data.status === 'EM_ANDAMENTO') void fila.guardarVistoria(data.id, data);
+      else void fila.esquecerVistoria(data.id);
+    } catch (e) {
+      if (minha !== versao.current) return;
+      if (semConexao(e)) {
+        const copia = await fila.lerVistoria<VistoriaCompleta>(id!);
+        if (copia) {
+          setDados((atual) => atual ?? copia.dados);
+          setCopiaDe(copia.salvoEm);
+          setErro('');
+          return;
+        }
+      }
+      setErro(mensagemDeErro(e));
+    }
+  }
 
   useEffect(() => {
-    if (dados) setItens(dados.itens);
-  }, [dados]);
+    setDados(null);
+    void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-  if (carregando && !dados) return <Carregando />;
-  if (erro || !dados) return <Erro>{erro || 'Vistoria não encontrada'}</Erro>;
+  // Fila da vistoria esvaziou (ou o sinal voltou): busca a versão do servidor
+  const tinhaFila = useRef(false);
+  useEffect(() => {
+    if (naFila.length > 0) {
+      tinhaFila.current = true;
+    } else if (tinhaFila.current) {
+      tinhaFila.current = false;
+      void carregar();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [naFila.length]);
+  useEffect(() => {
+    if (f.online && copiaDe !== null) void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.online]);
 
-  const editavel = dados.podeConduzir;
+  if (!dados && !erro) return <Carregando />;
+  if (!dados) {
+    return (
+      <>
+        <Erro>{erro}</Erro>
+        {!f.online && (
+          <p className="suave">
+            Esta vistoria ainda não foi aberta neste aparelho, então não há cópia guardada para mostrar sem conexão.
+          </p>
+        )}
+      </>
+    );
+  }
+
+  const editavel = dados.podeConduzir && dados.status === 'EM_ANDAMENTO';
+  const itens = dados.itens;
   const avaliados = itens.filter((i) => i.resultado).length;
   const ambientes = [...new Set(itens.map((i) => i.ambiente))];
+  const semJustificativa = itens.filter(
+    (i) => (i.resultado === 'NAO_CONFORME' || i.resultado === 'RESSALVA') && !i.observacao,
+  ).length;
 
-  // Cada toque é salvo na hora: se a conexão cair, a vistoria continua de onde parou
-  async function salvarItem(item: Item, mudanca: { resultado?: ResultadoItem | null; observacao?: string }) {
-    const anterior = itens;
-    setItens((atual) =>
-      atual.map((i) =>
+  // Cada toque muda a tela e a cópia no aparelho na hora, e entra na fila de
+  // envio. Não depende de haver sinal naquele momento.
+  function salvarItem(item: Item, mudanca: { resultado?: ResultadoItem | null; observacao?: string }) {
+    const novo: VistoriaCompleta = {
+      ...dados!,
+      itens: dados!.itens.map((i) =>
         i.id === item.id
-          ? { ...i, ...mudanca, observacao: mudanca.observacao !== undefined ? mudanca.observacao || null : i.observacao }
+          ? {
+              ...i,
+              ...(mudanca.resultado !== undefined ? { resultado: mudanca.resultado } : {}),
+              ...(mudanca.observacao !== undefined ? { observacao: mudanca.observacao || null } : {}),
+            }
           : i,
       ),
-    );
-    try {
-      await api.patch(`/vistorias/${id}/itens/${item.id}`, mudanca);
-      setAviso('');
-    } catch (e) {
-      setItens(anterior);
-      setAviso(`Não foi possível salvar "${item.descricao}": ${mensagemDeErro(e)}`);
-    }
+    };
+    setDados(novo);
+    void fila.guardarVistoria(novo.id, novo);
+    void fila.enfileirarItem(novo.id, item.id, `${item.ambiente} · ${item.descricao}`, mudanca);
   }
 
   async function finalizar() {
@@ -109,8 +183,27 @@ export default function Vistoria() {
         observacoes: observacoes.trim() || undefined,
       }),
     );
-    if (ok) navegar(`/unidades/${dados!.unidade.id}`);
+    if (ok) {
+      void fila.esquecerVistoria(id!);
+      navegar(`/unidades/${dados!.unidade.id}`);
+    }
   }
+
+  const bloqueio = !editavel
+    ? ''
+    : avaliados < itens.length
+      ? `Faltam ${itens.length - avaliados} itens`
+      : semJustificativa > 0
+        ? `Descreva o problema em ${semJustificativa} item(ns)`
+        : recusadas.length > 0
+          ? 'Resolva as alterações recusadas'
+          : naFila.length > 0
+            ? f.online
+              ? 'Enviando alterações…'
+              : 'Aguardando o sinal voltar'
+            : !f.online
+              ? 'Sem conexão para concluir'
+              : '';
 
   return (
     <div className="vistoria">
@@ -133,22 +226,77 @@ export default function Vistoria() {
       </header>
 
       {dados.status === 'EM_ANDAMENTO' && (
-        <div className="progresso" aria-label={`${avaliados} de ${itens.length} itens avaliados`}>
-          <div className="progresso-barra">
-            <span style={{ width: `${itens.length ? (avaliados / itens.length) * 100 : 0}%` }} />
+        <div className="progresso">
+          <div className="progresso-linha" aria-label={`${avaliados} de ${itens.length} itens avaliados`}>
+            <div className="progresso-barra">
+              <span style={{ width: `${itens.length ? (avaliados / itens.length) * 100 : 0}%` }} />
+            </div>
+            <span className="mono">
+              {avaliados}/{itens.length}
+            </span>
           </div>
-          <span className="mono">
-            {avaliados}/{itens.length}
-          </span>
+          {editavel && (
+            <p className={`sinc ${recusadas.length ? 'sinc-perigo' : naFila.length ? 'sinc-fila' : 'sinc-ok'}`} role="status">
+              <span className="faixa-ponto" />
+              {recusadas.length > 0
+                ? `${recusadas.length} alteração(ões) recusada(s) — veja abaixo`
+                : naFila.length > 0
+                  ? f.online
+                    ? `Enviando ${naFila.length} alteração(ões)…`
+                    : `Sem sinal: ${naFila.length} alteração(ões) salva(s) neste aparelho. Pode continuar.`
+                  : f.online
+                    ? 'Tudo salvo no servidor'
+                    : 'Sem sinal: pode continuar, o que você marcar fica salvo neste aparelho.'}
+            </p>
+          )}
         </div>
       )}
+
+      {copiaDe !== null && (
+        <div className="aviso" role="status">
+          Sem conexão: esta é a cópia guardada neste aparelho em {dataHora(new Date(copiaDe).toISOString())}
+          {naFila.length > 0 ? ', com as suas alterações ainda não enviadas' : ''}.
+        </div>
+      )}
+
+      {recusadas.length > 0 && (
+        <section className="cartao cartao-perigo" aria-label="Alterações recusadas">
+          <h2>Alterações que o servidor recusou</h2>
+          <p className="suave">
+            Estas alterações chegaram ao servidor, mas não foram aceitas. Elas não foram perdidas: confira o motivo e
+            decida.
+          </p>
+          <ul className="lista">
+            {recusadas.map((op) => (
+              <li key={op.id} className="lista-linha lista-linha-topo">
+                <div>
+                  <strong>{op.tipo === 'foto' ? `Foto — ${op.rotulo}` : op.rotulo}</strong>
+                  <span>{op.erro}</span>
+                </div>
+                <div className="signatario-acoes">
+                  <button type="button" className="link" onClick={() => fila.tentarDeNovo(op.id)}>
+                    Tentar de novo
+                  </button>
+                  <button type="button" className="link link-perigo" onClick={() => fila.descartar(op.id).then(carregar)}>
+                    Descartar
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {dados.status !== 'EM_ANDAMENTO' && (dados.observacoes || dados.acompanhante) && (
         <section className="cartao">
-          {dados.acompanhante && <p>Acompanhada por <strong>{dados.acompanhante}</strong></p>}
+          {dados.acompanhante && (
+            <p>
+              Acompanhada por <strong>{dados.acompanhante}</strong>
+            </p>
+          )}
           {dados.observacoes && <p>{dados.observacoes}</p>}
         </section>
       )}
-      <Erro>{aviso}</Erro>
 
       {ambientes.map((ambiente) => (
         <section key={ambiente} className="cartao">
@@ -156,7 +304,16 @@ export default function Vistoria() {
           {itens
             .filter((i) => i.ambiente === ambiente)
             .map((item) => (
-              <ItemVistoria key={item.id} vistoriaId={dados.id} item={item} editavel={editavel} salvar={salvarItem} aoMudarFotos={recarregar} />
+              <ItemVistoria
+                key={item.id}
+                vistoriaId={dados.id}
+                item={item}
+                editavel={editavel}
+                online={f.online}
+                fotosNaFila={naFila.filter((o) => o.tipo === 'foto' && o.itemId === item.id)}
+                salvar={salvarItem}
+                aoMudarFotos={carregar}
+              />
             ))}
         </section>
       ))}
@@ -177,11 +334,12 @@ export default function Vistoria() {
           </label>
           <p className="suave">
             Qualquer item não conforme reprova a vistoria e vira pendência. Aprovada (com ou sem ressalvas), o termo é
-            emitido para assinatura das partes.
+            emitido para assinatura das partes. A conclusão precisa de conexão e só acontece depois que tudo o que
+            está na fila deste aparelho chegar ao servidor.
           </p>
           <div className="passo-acoes">
-            <button type="button" className="botao botao-primario" disabled={concluir.enviando || avaliados < itens.length} onClick={finalizar}>
-              {concluir.enviando ? 'Concluindo…' : avaliados < itens.length ? `Faltam ${itens.length - avaliados} itens` : 'Concluir vistoria'}
+            <button type="button" className="botao botao-primario" disabled={concluir.enviando || !!bloqueio} onClick={finalizar}>
+              {concluir.enviando ? 'Concluindo…' : bloqueio || 'Concluir vistoria'}
             </button>
             <button type="button" className="link link-perigo" onClick={() => setCancelando(true)}>
               Cancelar vistoria
@@ -191,7 +349,16 @@ export default function Vistoria() {
       )}
 
       {cancelando && (
-        <CancelarVistoria id={dados.id} aoFechar={() => setCancelando(false)} aoCancelar={() => navegar(`/unidades/${dados.unidade.id}`)} />
+        <CancelarVistoria
+          id={dados.id}
+          aoFechar={() => setCancelando(false)}
+          aoCancelar={() => {
+            // A vistoria deixou de existir: o que estava na fila dela não tem mais para onde ir
+            opsDaVistoria.forEach((o) => void fila.descartar(o.id));
+            void fila.esquecerVistoria(dados.id);
+            navegar(`/unidades/${dados.unidade.id}`);
+          }}
+        />
       )}
     </div>
   );
@@ -201,36 +368,35 @@ function ItemVistoria({
   vistoriaId,
   item,
   editavel,
+  online,
+  fotosNaFila,
   salvar,
   aoMudarFotos,
 }: {
   vistoriaId: string;
   item: Item;
   editavel: boolean;
+  online: boolean;
+  fotosNaFila: Operacao[];
   salvar: (item: Item, m: { resultado?: ResultadoItem | null; observacao?: string }) => void;
   aoMudarFotos: () => void;
 }) {
   const [obs, setObs] = useState(item.observacao ?? '');
-  const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState('');
+  const [preparando, setPreparando] = useState(false);
   const entrada = useRef<HTMLInputElement>(null);
   const exigeObs = item.resultado === 'NAO_CONFORME' || item.resultado === 'RESSALVA';
+  const rotulo = `${item.ambiente} · ${item.descricao}`;
 
-  async function enviarFotos(arquivos: FileList | null) {
+  async function guardarFotos(arquivos: FileList | null) {
     if (!arquivos?.length) return;
-    setEnviando(true);
-    setErro('');
+    setPreparando(true);
     try {
-      const form = new FormData();
       for (const a of Array.from(arquivos).slice(0, 6)) {
-        form.append('fotos', await reduzir(a), a.name.replace(/\.\w+$/, '') + '.jpg');
+        const reduzida = await reduzir(a);
+        await fila.enfileirarFoto(vistoriaId, item.id, rotulo, reduzida, a.name.replace(/\.\w+$/, '') + '.jpg');
       }
-      await api.post(`/vistorias/${vistoriaId}/itens/${item.id}/fotos`, form);
-      aoMudarFotos();
-    } catch (e) {
-      setErro(mensagemDeErro(e));
     } finally {
-      setEnviando(false);
+      setPreparando(false);
       if (entrada.current) entrada.current.value = '';
     }
   }
@@ -252,29 +418,32 @@ function ItemVistoria({
           </button>
         ))}
       </div>
-      {(exigeObs || obs || !editavel) && (editavel ? (
-        <textarea
-          className="item-obs"
-          rows={2}
-          placeholder={exigeObs ? 'Descreva o problema (obrigatório)' : 'Observação'}
-          aria-label={`Observação: ${item.descricao}`}
-          value={obs}
-          onChange={(e) => setObs(e.target.value)}
-          onBlur={() => obs.trim() !== (item.observacao ?? '') && salvar(item, { observacao: obs.trim() })}
-        />
-      ) : (
-        item.observacao && <p className="item-obs-lida">{item.observacao}</p>
-      ))}
-      <Erro>{erro}</Erro>
-      {(item.fotos.length > 0 || editavel) && (
+      {(exigeObs || obs || !editavel) &&
+        (editavel ? (
+          <textarea
+            className="item-obs"
+            rows={2}
+            placeholder={exigeObs ? 'Descreva o problema (obrigatório)' : 'Observação'}
+            aria-label={`Observação: ${item.descricao}`}
+            value={obs}
+            onChange={(e) => setObs(e.target.value)}
+            onBlur={() => obs.trim() !== (item.observacao ?? '') && salvar(item, { observacao: obs.trim() })}
+          />
+        ) : (
+          item.observacao && <p className="item-obs-lida">{item.observacao}</p>
+        ))}
+      {(item.fotos.length > 0 || fotosNaFila.length > 0 || editavel) && (
         <div className="fotos">
-          {item.fotos.map((f) => (
-            <Foto key={f.id} foto={f} editavel={editavel} aoRemover={aoMudarFotos} />
+          {item.fotos.map((foto) => (
+            <Foto key={foto.id} foto={foto} editavel={editavel && online} aoRemover={aoMudarFotos} />
+          ))}
+          {fotosNaFila.map((op) => (
+            <FotoNaFila key={op.id} op={op} />
           ))}
           {editavel && (
-            <label className={`foto foto-nova ${enviando ? 'ocupado' : ''}`}>
-              <input ref={entrada} type="file" accept="image/*" multiple hidden disabled={enviando} onChange={(e) => enviarFotos(e.target.files)} />
-              {enviando ? 'Enviando…' : '+ Foto'}
+            <label className={`foto foto-nova ${preparando ? 'ocupado' : ''}`}>
+              <input ref={entrada} type="file" accept="image/*" multiple hidden disabled={preparando} onChange={(e) => guardarFotos(e.target.files)} />
+              {preparando ? 'Guardando…' : '+ Foto'}
             </label>
           )}
         </div>
@@ -283,9 +452,40 @@ function ItemVistoria({
   );
 }
 
+// Foto que ainda não chegou ao servidor: mostrada a partir da cópia no aparelho
+function FotoNaFila({ op }: { op: Operacao }) {
+  const [url, setUrl] = useState('');
+  const [ampliada, setAmpliada] = useState(false);
+  useEffect(() => {
+    if (op.tipo !== 'foto') return;
+    const criada = URL.createObjectURL(new Blob([op.dados], { type: op.mime }));
+    setUrl(criada);
+    return () => URL.revokeObjectURL(criada);
+  }, [op]);
+  return (
+    <>
+      <button type="button" className="foto foto-fila" onClick={() => setAmpliada(true)} aria-label="Foto aguardando envio">
+        {url && <img src={url} alt="" />}
+        <span className="foto-selo">na fila</span>
+      </button>
+      {ampliada && (
+        <Modal titulo="Foto aguardando envio" aoFechar={() => setAmpliada(false)} largo>
+          {url && <img src={url} alt="" className="foto-grande" />}
+          <footer className="modal-pe">
+            <button type="button" className="botao botao-perigo" onClick={() => fila.descartar(op.id)}>
+              Remover foto
+            </button>
+          </footer>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function Foto({ foto, editavel, aoRemover }: { foto: FotoInfo; editavel: boolean; aoRemover: () => void }) {
   const [url, setUrl] = useState('');
   const [ampliada, setAmpliada] = useState(false);
+  const [erro, setErro] = useState('');
   useEffect(() => {
     let criada = '';
     let ativo = true;
@@ -305,20 +505,29 @@ function Foto({ foto, editavel, aoRemover }: { foto: FotoInfo; editavel: boolean
   return (
     <>
       <button type="button" className="foto" onClick={() => setAmpliada(true)} aria-label={`Ampliar foto ${foto.nomeOriginal}`}>
-        {url && <img src={url} alt="" />}
+        {url ? <img src={url} alt="" /> : <span className="foto-selo foto-selo-neutro">salva</span>}
       </button>
       {ampliada && (
         <Modal titulo="Foto" aoFechar={() => setAmpliada(false)} largo>
-          {url && <img src={url} alt={foto.nomeOriginal} className="foto-grande" />}
+          {url ? (
+            <img src={url} alt={foto.nomeOriginal} className="foto-grande" />
+          ) : (
+            <p className="suave">A foto está salva no servidor; a imagem aparece quando houver conexão.</p>
+          )}
+          <Erro>{erro}</Erro>
           {editavel && (
             <footer className="modal-pe">
               <button
                 type="button"
                 className="botao botao-perigo"
                 onClick={async () => {
-                  await api.delete(`/fotos/${foto.id}`).catch(() => undefined);
-                  setAmpliada(false);
-                  aoRemover();
+                  try {
+                    await api.delete(`/fotos/${foto.id}`);
+                    setAmpliada(false);
+                    aoRemover();
+                  } catch (e) {
+                    setErro(mensagemDeErro(e));
+                  }
                 }}
               >
                 Remover foto

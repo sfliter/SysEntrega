@@ -1,13 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { PERFIL } from '../fluxo';
 import { Erro, Marca, Modal, useAcao } from './Basicos';
+import { FaixaConexao, Protecao } from './Conexao';
 
 export default function Layout() {
   const { usuario, sair } = useAuth();
   const [trocando, setTrocando] = useState(false);
+  const local = useLocation();
   if (!usuario) return null;
   const perfil = usuario.perfil;
   const itens = [
@@ -47,7 +49,10 @@ export default function Layout() {
         </div>
       </aside>
       <main className="conteudo">
-        <Outlet />
+        <FaixaConexao />
+        <Protecao key={local.pathname}>
+          <Outlet />
+        </Protecao>
       </main>
       {trocando && <TrocarSenha aoFechar={() => setTrocando(false)} />}
     </div>

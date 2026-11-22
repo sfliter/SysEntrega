@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { abrirPdf, api, mensagemDeErro } from '../api';
+import { abrirPdf, api, DEMO, mensagemDeErro } from '../api';
 import { Carregando, Erro, Modal, Pill, PillStatus, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import CampoAssinatura, { obterLocalizacao } from '../components/CampoAssinatura';
 import Historico from '../components/Historico';
@@ -398,6 +398,7 @@ export default function UnidadeDetalhe() {
 
       <section className="cartao">
         <h2>Histórico da unidade</h2>
+        {permissoes.anotar && <Anotar unidadeId={unidade.id} aoSalvar={() => setVersao((v) => v + 1)} />}
         <Historico unidadeId={unidade.id} versao={versao} />
       </section>
 
@@ -494,6 +495,41 @@ export default function UnidadeDetalhe() {
   );
 }
 
+// Anotação livre no histórico: combinados, ocorrências, recados entre as partes
+function Anotar({ unidadeId, aoSalvar }: { unidadeId: string; aoSalvar: () => void }) {
+  const [texto, setTexto] = useState('');
+  const { enviando, erro, executar } = useAcao();
+  return (
+    <form
+      className="anotar"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (await executar(() => api.post(`/unidades/${unidadeId}/anotacoes`, { texto }))) {
+          setTexto('');
+          aoSalvar();
+        }
+      }}
+    >
+      <Erro>{erro}</Erro>
+      <label className="campo">
+        <span>Registrar anotação</span>
+        <textarea
+          rows={2}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="Combinados, ocorrências, recados — fica no histórico e não pode ser apagado"
+          maxLength={2000}
+          required
+          minLength={3}
+        />
+      </label>
+      <button className="botao" disabled={enviando || texto.trim().length < 3}>
+        {enviando ? 'Registrando…' : 'Registrar'}
+      </button>
+    </form>
+  );
+}
+
 function Passo({ titulo, texto, children }: { titulo: string; texto?: string; children?: ReactNode }) {
   return (
     <div className="passo">
@@ -520,23 +556,32 @@ function AcoesAgendamento({ ag, abrir }: { ag: Agendamento; abrir: (m: ModalAber
 
 function LinkCliente({ rotulo, caminho }: { rotulo: string; caminho: string }) {
   const [copiado, setCopiado] = useState(false);
-  const url = `${window.location.origin}${caminho}`;
+  const url = `${DEMO ? 'https://sysentrega.exemplo.com.br' : window.location.origin}${caminho}`;
   return (
     <div className="link-cliente">
       <span className="etiqueta">{rotulo}</span>
       <div className="link-cliente-linha">
-        <input readOnly value={url} onFocus={(e) => e.target.select()} aria-label={rotulo} />
+        <input id={`link-${caminho}`} readOnly value={url} onFocus={(e) => e.target.select()} aria-label={rotulo} />
         <button
           type="button"
           className="botao"
           onClick={async () => {
-            await navigator.clipboard?.writeText(url).catch(() => undefined);
-            setCopiado(true);
-            setTimeout(() => setCopiado(false), 2000);
+            try {
+              await navigator.clipboard.writeText(url);
+              setCopiado(true);
+              setTimeout(() => setCopiado(false), 2000);
+            } catch {
+              // Sem acesso à área de transferência: seleciona para copiar à mão
+              (document.getElementById(`link-${caminho}`) as HTMLInputElement | null)?.select();
+            }
           }}
         >
           {copiado ? 'Copiado' : 'Copiar'}
         </button>
+        {/* Para atender o cliente no próprio aparelho do Relacionamento */}
+        <Link className="botao" to={caminho} target={DEMO ? undefined : '_blank'} rel="noreferrer">
+          Abrir
+        </Link>
       </div>
     </div>
   );

@@ -33,10 +33,14 @@ export default function Historico({ unidadeId, versao }: { unidadeId: string; ve
     <>
       <ol className="linha-tempo">
         {[...eventos].reverse().map((e) => (
-          <li key={e.seq} className={DETALHE.has(e.acao) ? 'evento evento-detalhe' : 'evento'}>
+          <li
+            key={e.seq}
+            className={`evento ${DETALHE.has(e.acao) ? 'evento-detalhe' : ''} ${e.acao === 'ANOTACAO' ? 'evento-anotacao' : ''}`}
+          >
             <div className="evento-topo">
               <time>{dataHora(e.criadoEm)}</time>
               {e.etapa && <span className="evento-etapa">Etapa {ordemDaEtapa(e.etapa)}</span>}
+              {e.acao === 'ANOTACAO' && <span className="evento-etapa">Anotação</span>}
               <span className="evento-seq">#{e.seq}</span>
             </div>
             <p className="evento-texto">{e.descricao}</p>

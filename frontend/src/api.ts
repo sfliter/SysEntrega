@@ -2,25 +2,54 @@ import axios from 'axios';
 
 export const api = axios.create({ baseURL: '/api' });
 
+// Versão de demonstração: mesma interface, com um servidor simulado dentro
+// da própria página (src/demo). Nada sai do navegador.
+export const DEMO = import.meta.env.VITE_DEMO === '1';
+
 const CHAVE_TOKEN = 'sysentrega.token';
 const CHAVE_USUARIO = 'sysentrega.usuario';
 
+// O navegador pode recusar o armazenamento (janela anônima, dados bloqueados):
+// a sessão então vale só enquanto a página estiver aberta.
+const reserva = new Map<string, string>();
+const guardado = {
+  ler(chave: string): string | null {
+    if (DEMO) return reserva.get(chave) ?? null;
+    try {
+      return localStorage.getItem(chave);
+    } catch {
+      return reserva.get(chave) ?? null;
+    }
+  },
+  gravar(chave: string, valor: string | null) {
+    if (valor === null) reserva.delete(chave);
+    else reserva.set(chave, valor);
+    if (DEMO) return;
+    try {
+      if (valor === null) localStorage.removeItem(chave);
+      else localStorage.setItem(chave, valor);
+    } catch {
+      // segue com a cópia em memória
+    }
+  },
+};
+
 export const sessao = {
-  token: () => localStorage.getItem(CHAVE_TOKEN),
+  token: () => guardado.ler(CHAVE_TOKEN),
   usuario: () => {
     try {
-      return JSON.parse(localStorage.getItem(CHAVE_USUARIO) || 'null');
+      return JSON.parse(guardado.ler(CHAVE_USUARIO) || 'null');
     } catch {
       return null;
     }
   },
   guardar(token: string, usuario: unknown) {
-    localStorage.setItem(CHAVE_TOKEN, token);
-    localStorage.setItem(CHAVE_USUARIO, JSON.stringify(usuario));
+    guardado.gravar(CHAVE_TOKEN, token);
+    guardado.gravar(CHAVE_USUARIO, JSON.stringify(usuario));
   },
   limpar() {
-    localStorage.removeItem(CHAVE_TOKEN);
-    localStorage.removeItem(CHAVE_USUARIO);
+    guardado.gravar(CHAVE_TOKEN, null);
+    guardado.gravar(CHAVE_USUARIO, null);
   },
 };
 
@@ -43,11 +72,15 @@ api.interceptors.response.use(
       !url.startsWith('/publico/')
     ) {
       sessao.limpar();
-      window.location.href = '/login';
+      if (!DEMO) window.location.href = '/login';
     }
     return Promise.reject(erro);
   },
 );
+
+export function semConexao(erro: unknown): boolean {
+  return axios.isAxiosError(erro) && !erro.response;
+}
 
 export function mensagemDeErro(erro: unknown): string {
   if (axios.isAxiosError(erro)) {
@@ -66,6 +99,11 @@ export async function baixarBlob(caminho: string): Promise<Blob> {
 }
 
 export async function abrirPdf(caminho: string) {
+  if (DEMO) {
+    // Na demonstração o termo abre numa janela da própria página
+    window.dispatchEvent(new CustomEvent('demo:documento', { detail: caminho }));
+    return;
+  }
   // A aba é aberta já no clique: depois do download o navegador a bloquearia
   const aba = window.open('', '_blank');
   try {

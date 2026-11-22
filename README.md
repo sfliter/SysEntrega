@@ -6,9 +6,9 @@ Sistema de gestão de **recebimento e entrega de unidades**: acompanha cada unid
 |---|---|
 | ![Painel](docs/telas/painel.png) | ![Unidade](docs/telas/unidade-aguardando-cliente.png) |
 
-| Vistoria no celular | Assinatura do cliente | Auditoria |
+| Vistoria sem sinal | Assinatura do cliente | Auditoria |
 |---|---|---|
-| ![Vistoria](docs/telas/vistoria-celular.png) | ![Assinatura do cliente](docs/telas/cliente-assinar.png) | ![Auditoria](docs/telas/auditoria.png) |
+| ![Vistoria sem sinal](docs/telas/vistoria-sem-sinal.png) | ![Assinatura do cliente](docs/telas/cliente-assinar.png) | ![Auditoria](docs/telas/auditoria.png) |
 
 *(Telas com os dados de demonstração do seed.)*
 
@@ -62,7 +62,20 @@ As regras de cada etapa (quem libera, quem oferece horários, quem vistoria, que
 - **Relacionamento ↔ Cliente**: o Relacionamento oferece horários e o cliente escolhe por um **link público** (sem login), ou o Relacionamento registra a escolha feita por telefone (fica marcado como "em nome do cliente", com a observação obrigatória de como foi confirmado). O cliente também pode dizer que nenhum horário serve.
 - Cancelamento e reagendamento exigem motivo. A tela **Agenda** mostra as vistorias confirmadas por dia e as propostas aguardando escolha.
 
-### 4. Assinatura — pronta para o rsf-signer
+### 4. Vistoria que não se perde quando o sinal cai
+
+Na obra o sinal do celular oscila. Por isso a vistoria **não depende da rede no momento do toque**:
+
+- Cada avaliação, observação e foto é gravada primeiro **no aparelho** e entra numa **fila de envio**. A tela mostra o tempo todo a situação: *Tudo salvo no servidor*, *Enviando N alterações* ou *Sem sinal: N alterações salvas neste aparelho. Pode continuar.*
+- A fila é enviada sozinha quando o sinal volta e tentada de novo, com intervalos crescentes, até dar certo — inclusive depois de **recarregar a página ou fechar o navegador** sem sinal.
+- Reenvio **não duplica**: avaliação vale o último toque, e o servidor reconhece a mesma foto pelo conteúdo (caso típico: o envio chegou, mas a resposta se perdeu).
+- Se o servidor **recusar** algo (por exemplo, a vistoria foi cancelada em outro aparelho), a alteração não some: fica na tela, com o motivo, até o usuário decidir.
+- A interface fica guardada no aparelho (service worker): recarregar sem sinal abre o sistema do mesmo jeito.
+- **Concluir** a vistoria exige conexão e fila vazia — é o momento em que o termo é emitido.
+
+Limites: *iniciar* a vistoria precisa de sinal (é quando a pauta é copiada), e a vistoria precisa ter sido aberta uma vez no aparelho para ficar disponível sem conexão. O código está em [`frontend/src/fila.ts`](frontend/src/fila.ts).
+
+### 5. Assinatura — pronta para o rsf-signer
 
 A coleta de assinaturas fica atrás de um adaptador ([`backend/src/assinaturas/provedor.ts`](backend/src/assinaturas/provedor.ts)). O restante do sistema só conhece "assinou" e "recusou", venha de onde vier. Há dois provedores, escolhidos por `ASSINATURA_PROVEDOR`:
 
@@ -76,6 +89,23 @@ A coleta de assinaturas fica atrás de um adaptador ([`backend/src/assinaturas/p
 **`rsf-signer`** — o termo emitido é enviado ao rsf-signer, que colhe as assinaturas e avisa o resultado por webhook assinado (HMAC). Contrato e passos para ligar: [`docs/integracao-rsf-signer.md`](docs/integracao-rsf-signer.md).
 
 > **Importante:** o repositório do rsf-signer ainda não tem API publicada. O adaptador segue um **contrato proposto** e foi testado contra um serviço simulado que implementa esse contrato — não contra o rsf-signer real. Quando a API real existir, os ajustes ficam em um único arquivo: `backend/src/assinaturas/rsf-signer.provedor.ts`.
+
+### 6. Complementos
+
+- **Anotações** no histórico da unidade (combinados, ocorrências), gravadas na trilha de auditoria.
+- **Avisos por e-mail** a quem precisa agir a cada mudança de situação (`NOTIFICAR_POR_EMAIL=1`); a construtora só recebe os das obras dela, e os avisos não levam dados do cliente.
+- **Planilha (CSV)** das unidades, com os filtros da tela, e coluna de há quanto tempo cada unidade está na situação atual.
+- **Monitoramento**: `GET /api/saude` responde 200 só com o banco acessível (usado no healthcheck do container).
+- **Segurança de acesso**: limite de tentativas no login e nos links públicos; perfil e situação do usuário conferidos no banco a cada requisição (desativar alguém vale na hora); troca de senha pelo próprio usuário.
+
+## Demonstração em HTML
+
+`npm run build:demo` (em `frontend/`) gera **um único arquivo HTML** com as telas do sistema e um servidor simulado dentro da própria página (`frontend/src/demo`), com dados fictícios. Serve para apresentar e aprovar telas e fluxo sem instalar nada: troca de perfil, simulação de queda de sinal e um roteiro com os pontos a aprovar. Nada é gravado.
+
+```bash
+cd frontend && npm install && npm run build:demo
+# abra dist-demo/abrir-no-navegador.html
+```
 
 ## Perfis
 
@@ -183,22 +213,34 @@ Todas sob `/api`.
 - `POST /auth/login` · `GET /auth/me` · `POST /auth/trocar-senha`
 - `GET/POST /unidades` · `GET/PATCH /unidades/:id` · `GET /unidades/:id/historico`
 - `POST /unidades/:id/liberar` — libera para a etapa, ou reapresenta após pendências
+- `POST /unidades/:id/anotacoes` · `GET /unidades/exportar.csv`
 - `POST /pendencias/:id/resolver`
 - `GET /agendamentos` · `POST /unidades/:id/agendamentos` · `POST /agendamentos/:id/confirmar | cancelar | reagendar`
 - `POST /unidades/:id/vistorias` · `GET /vistorias/:id` · `PATCH /vistorias/:id/itens/:itemId` · `POST /vistorias/:id/itens/:itemId/fotos` · `POST /vistorias/:id/concluir | cancelar`
 - `GET /documentos/:id/pdf?versao=original|assinado`
 - `POST /signatarios/:id/assinar | recusar` · `POST /envelopes/:id/cancelar | reenviar | sincronizar`
 - `GET /auditoria` · `GET /auditoria/verificar` · `GET /auditoria/exportar.csv`
-- `GET /dashboard`
+- `GET /dashboard` · `GET /saude`
 - Cadastros: `/organizacoes`, `/empreendimentos`, `/clientes`, `/usuarios`, `/pauta`
 - Sem login (cliente): `/publico/agendamento/:token…`, `/publico/assinatura/:token…`, `/publico/verificar/:protocolo`
 - Webhook: `POST /assinaturas/webhooks/rsf-signer`
+
+### Teste da vistoria sem sinal (navegador)
+
+Com o sistema no ar usando o build de produção (`npm run build && npx vite preview --host 127.0.0.1 --port 4173` no frontend) e o Playwright disponível:
+
+```bash
+cd frontend && node test/offline.e2e.mjs
+```
+
+Corta a rede no meio de uma vistoria, recarrega e reabre a página sem sinal, devolve o sinal com uma resposta perdida no caminho e confere, do lado do servidor, que nada se perdeu nem duplicou.
 
 ## Limites conhecidos e próximos passos
 
 - **Textos jurídicos**: as declarações de aceite dos três termos (`backend/src/documentos/termo.ts`) são um ponto de partida e **precisam de revisão do jurídico** antes do uso em produção. O mesmo vale para a avaliação do valor probatório da assinatura interna.
 - **rsf-signer**: integração escrita contra um contrato proposto (ver acima).
-- **Notificações**: não há envio de e-mail/WhatsApp a cada passo — só o link de assinatura e o código do cliente. O painel "Aguardando você" mostra o que está parado com cada usuário.
+- **Notificações**: avisos por e-mail a cada mudança de situação (opcionais). Não há WhatsApp/SMS nem notificações dentro do sistema além do painel "Aguardando você".
+- **Vistoria sem sinal**: a fila fica no navegador do aparelho. Limpar os dados do navegador antes do envio apaga o que ainda não foi enviado; trocar de aparelho no meio da vistoria não leva a fila junto.
 - **Login**: e-mail e senha. Não há login pelo Microsoft 365 nem segundo fator.
 - **Limite de tentativas** (login e links públicos) fica na memória do processo: vale para uma instância da API.
 - **Arquivos em disco**: para S3/MinIO, reimplemente os três métodos de `backend/src/vistorias/armazenamento.service.ts`.

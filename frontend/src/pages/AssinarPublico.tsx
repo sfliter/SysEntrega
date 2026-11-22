@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api } from '../api';
+import { abrirPdf, api, DEMO } from '../api';
 import { Carregando, Erro, Marca, useAcao, useCarregar } from '../components/Basicos';
 import CampoAssinatura, { obterLocalizacao } from '../components/CampoAssinatura';
 import { dataHora, RESULTADO_VISTORIA } from '../fluxo';
@@ -28,7 +28,7 @@ export default function AssinarPublico() {
   const { token } = useParams();
   const base = `/publico/assinatura/${token}`;
   const { dados, erro, carregando, recarregar } = useCarregar<Dados>(async () => (await api.get(base)).data, [token]);
-  const [envio, setEnvio] = useState<{ enviadoPara: string; validadeMinutos: number; ensaio: boolean } | null>(null);
+  const [envio, setEnvio] = useState<{ enviadoPara: string; validadeMinutos: number; ensaio: boolean; codigoDemo?: string } | null>(null);
   const [codigo, setCodigo] = useState('');
   const [rubrica, setRubrica] = useState<string | null>(null);
   const [li, setLi] = useState(false);
@@ -77,9 +77,15 @@ export default function AssinarPublico() {
             )}
 
             {/* Link direto: abre o PDF no leitor do próprio aparelho */}
-            <a className="botao botao-cheio" href={`/api${base}/documento`} target="_blank" rel="noreferrer">
-              {dados.temAssinado ? 'Abrir o termo assinado (PDF)' : 'Ler o termo completo (PDF)'}
-            </a>
+            {DEMO ? (
+              <button type="button" className="botao botao-cheio" onClick={() => abrirPdf(`${base}/documento`)}>
+                {dados.temAssinado ? 'Abrir o termo assinado' : 'Ler o termo completo'}
+              </button>
+            ) : (
+              <a className="botao botao-cheio" href={`/api${base}/documento`} target="_blank" rel="noreferrer">
+                {dados.temAssinado ? 'Abrir o termo assinado (PDF)' : 'Ler o termo completo (PDF)'}
+              </a>
+            )}
             <Erro>{acao.erro}</Erro>
 
             {dados.status === 'ASSINADO' && (
@@ -124,6 +130,12 @@ export default function AssinarPublico() {
                           Enviar de novo
                         </button>
                       </p>
+                    )}
+                    {envio?.codigoDemo && (
+                      <div className="aviso" role="status">
+                        Demonstração: na operação este código chega ao e-mail do cliente. Aqui ele é{' '}
+                        <strong className="mono">{envio.codigoDemo}</strong>.
+                      </div>
                     )}
                     {envio?.ensaio && (
                       <div className="aviso aviso-perigo">

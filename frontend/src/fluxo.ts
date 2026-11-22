@@ -63,6 +63,16 @@ export const dataHora = (iso?: string | null) => (iso ? fmtDataHora.format(new D
 export const dataLonga = (iso: string) => fmtData.format(new Date(iso));
 export const hora = (iso: string) => fmtHora.format(new Date(iso));
 
+// "há 3 dias", "há 5 h", "agora" — quanto tempo a unidade está na situação atual
+export function haQuanto(iso: string): string {
+  const minutos = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutos < 60) return minutos < 2 ? 'agora' : `há ${minutos} min`;
+  const horas = Math.round(minutos / 60);
+  if (horas < 24) return `há ${horas} h`;
+  const dias = Math.round(horas / 24);
+  return dias === 1 ? 'há 1 dia' : `há ${dias} dias`;
+}
+
 export function formatarCpfCnpj(v?: string | null) {
   const d = (v ?? '').replace(/\D/g, '');
   if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');

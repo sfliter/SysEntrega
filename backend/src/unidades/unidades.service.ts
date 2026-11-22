@@ -239,6 +239,7 @@ export class UnidadesService {
         iniciarVistoria: regras.podeIniciarVistoria(u, unidade),
         resolverPendencias: regras.podeResolverPendencias(u, unidade),
         editar: regras.podeCadastrarUnidades(u),
+        anotar: u.perfil !== Perfil.AUDITOR && etapas.includes(unidade.etapa),
         vincularCliente:
           regras.podeGerirClientes(u) && unidade.status !== StatusUnidade.ENTREGUE,
       },

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, baixarBlob, mensagemDeErro } from '../api';
+import { api, baixarBlob, DEMO, mensagemDeErro } from '../api';
 import { Carregando, Erro, useCarregar, Vazio } from '../components/Basicos';
 import { dataHora, PERFIL } from '../fluxo';
 import type { Perfil } from '../tipos';
@@ -92,9 +92,11 @@ export default function Auditoria() {
           <button type="button" className="botao" onClick={verificar} disabled={verificando}>
             {verificando ? 'Conferindo…' : 'Verificar integridade'}
           </button>
-          <button type="button" className="botao" onClick={exportar}>
-            Exportar CSV
-          </button>
+          {!DEMO && (
+            <button type="button" className="botao" onClick={exportar}>
+              Exportar CSV
+            </button>
+          )}
         </div>
       </header>
 

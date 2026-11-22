@@ -30,7 +30,7 @@
   --andamento-fundo: #e4eefc;
   --neutro-fundo: #eceff3;
   --raio: 10px;
-  --fonte: 'Archivo Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --fonte: 'Archivo Variable', 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
   --sombra: 0 1px 2px rgba(11, 42, 91, 0.06), 0 6px 20px rgba(11, 42, 91, 0.06);
 }
@@ -653,7 +653,7 @@ a.lista-linha:hover strong { color: var(--azul); }
   .nav-item.active { border-bottom-color: var(--dourado); }
   .lateral-pe { margin: 0 0 0 auto; flex-direction: row; align-items: center; }
   .quem { display: none; }
-  .conteudo { padding: 18px 14px 48px; }
+  .conteudo { padding: 18px 16px 48px; }
   h1 { font-size: 22px; }
   .esteira { grid-template-columns: 1fr; }
   .esteira-etapa { border-right: none; border-bottom: 1px solid var(--fio); }
@@ -667,3 +667,56 @@ a.lista-linha:hover strong { color: var(--azul); }
   .filtros .campo { min-width: 0; flex: 1 1 150px; }
   .entrada-cartao, .publico-cartao { padding: 24px 18px 20px; }
 }
+
+/* ---------- conexão e fila de envio ---------- */
+.faixa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-radius: 8px;
+  padding: 9px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  background: var(--andamento-fundo);
+  color: #0a3f8f;
+  border: 1px solid #c3d8f7;
+}
+.faixa-offline { background: var(--atencao-fundo); color: #6b4500; border-color: #f0d9a4; }
+.faixa-perigo { background: var(--perigo-fundo); color: #7d1a14; border-color: #f2c4bf; }
+.faixa > span:nth-child(2) { flex: 1; min-width: 200px; }
+.faixa-link { color: inherit; font-weight: 650; white-space: nowrap; }
+.faixa-ponto { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.faixa-envio .faixa-ponto, .sinc-fila .faixa-ponto { animation: pulsar 1.2s ease-in-out infinite; }
+@keyframes pulsar { 50% { opacity: 0.25; } }
+
+.progresso { display: block; }
+.progresso-linha { display: flex; align-items: center; gap: 12px; }
+.sinc { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-top: 6px; }
+.sinc-ok { color: var(--ok); }
+.sinc-fila { color: var(--atencao); }
+.sinc-perigo { color: var(--perigo); }
+.cartao-perigo { border-left: 4px solid var(--perigo); }
+
+.foto { position: relative; display: grid; place-items: center; }
+.foto-fila { border-style: dashed; border-color: #d99a1c; }
+.foto-selo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(138, 90, 0, 0.92);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-align: center;
+  padding: 1px 0;
+}
+.foto-selo-neutro { position: static; background: none; color: var(--tinta-3); }
+
+/* ---------- anotações ---------- */
+.anotar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+.anotar .campo { flex: 1; min-width: 240px; margin-bottom: 0; }
+.anotar .aviso { width: 100%; margin: 0; }
+.evento-anotacao::before { background: var(--andamento); }
+.evento-anotacao .evento-texto { font-weight: 400; background: var(--andamento-fundo); border-radius: 8px; padding: 8px 12px; margin-top: 4px; white-space: pre-wrap; }

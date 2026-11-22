@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, baixarBlob, DEMO, mensagemDeErro } from '../api';
 import { useAuth } from '../auth';
 import { Carregando, Erro, Modal, PillStatus, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import Trilho from '../components/Trilho';
-import { ETAPAS, STATUS } from '../fluxo';
+import { ETAPAS, haQuanto, STATUS } from '../fluxo';
 import type { StatusUnidade, UnidadeResumo } from '../tipos';
 
 interface Empreendimento {
@@ -39,6 +39,22 @@ export default function Unidades() {
     setParams(novo, { replace: true });
   }
 
+  const [erroExportar, setErroExportar] = useState('');
+  async function exportar() {
+    setErroExportar('');
+    try {
+      const blob = await baixarBlob(`/unidades/exportar.csv?${params}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `unidades-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErroExportar(mensagemDeErro(e));
+    }
+  }
+
   const podeCadastrar = usuario?.perfil === 'ADMINISTRADOR' || usuario?.perfil === 'INCORPORADORA';
 
   return (
@@ -48,11 +64,18 @@ export default function Unidades() {
           <p className="etiqueta">Unidades</p>
           <h1>Acompanhamento das unidades</h1>
         </div>
-        {podeCadastrar && (
-          <button type="button" className="botao botao-primario" onClick={() => setNova(true)}>
-            Cadastrar unidades
-          </button>
-        )}
+        <div className="passo-acoes">
+          {!DEMO && (
+            <button type="button" className="botao" onClick={exportar}>
+              Baixar planilha
+            </button>
+          )}
+          {podeCadastrar && (
+            <button type="button" className="botao botao-primario" onClick={() => setNova(true)}>
+              Cadastrar unidades
+            </button>
+          )}
+        </div>
       </header>
 
       <form
@@ -107,7 +130,7 @@ export default function Unidades() {
         <button className="botao">Buscar</button>
       </form>
 
-      <Erro>{lista.erro}</Erro>
+      <Erro>{lista.erro || erroExportar}</Erro>
       {lista.carregando && !lista.dados ? (
         <Carregando />
       ) : !lista.dados?.length ? (
@@ -122,6 +145,7 @@ export default function Unidades() {
                 <th>Caminho</th>
                 <th>Situação</th>
                 <th>Cliente</th>
+                <th>Nesta situação</th>
               </tr>
             </thead>
             <tbody>
@@ -144,6 +168,7 @@ export default function Unidades() {
                     )}
                   </td>
                   <td>{u.cliente?.nome ?? <span className="suave">—</span>}</td>
+                  <td className="nao-quebra suave">{u.status === 'ENTREGUE' ? '—' : haQuanto(u.atualizadoEm)}</td>
                 </tr>
               ))}
             </tbody>

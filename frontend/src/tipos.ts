@@ -152,6 +152,7 @@ export interface DetalheUnidade {
     iniciarVistoria: boolean;
     resolverPendencias: boolean;
     editar: boolean;
+    anotar: boolean;
     vincularCliente: boolean;
   };
   agendamentos: Agendamento[];
