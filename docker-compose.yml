@@ -42,6 +42,10 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@sysentrega.local}
       SEED_SENHA_PADRAO: ${SEED_SENHA_PADRAO:-}
       SEED_DEMO: ${SEED_DEMO:-}
+      # Conta de teste (um login que vê o sistema como qualquer perfil)
+      SEED_CONTA_TESTE: ${SEED_CONTA_TESTE:-}
+      SEED_TESTE_EMAIL: ${SEED_TESTE_EMAIL:-teste@sysentrega.local}
+      CONTAS_DE_TESTE: ${CONTAS_DE_TESTE:-}
       AGENDAMENTO_MIN_OPCOES: ${AGENDAMENTO_MIN_OPCOES:-1}
       # Assinatura: interno (padrão) ou rsf-signer
       ASSINATURA_PROVEDOR: ${ASSINATURA_PROVEDOR:-interno}

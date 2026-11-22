@@ -557,7 +557,7 @@ export class AssinaturasService {
           sig.id,
           {
             metodo: MetodoAssinatura.SESSAO_AUTENTICADA,
-            nome: usuario.nome,
+            nome: ctx.usuario.nome,
             cpf: usuario.cpf,
             usuarioId: usuario.id,
             ip: ctx.ip,

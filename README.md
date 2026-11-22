@@ -10,6 +10,10 @@ Sistema de gestão de **recebimento e entrega de unidades**: acompanha cada unid
 |---|---|---|
 | ![Vistoria sem sinal](docs/telas/vistoria-sem-sinal.png) | ![Assinatura do cliente](docs/telas/cliente-assinar.png) | ![Auditoria](docs/telas/auditoria.png) |
 
+| Conta de teste (ver como) |
+|---|
+| ![Conta de teste](docs/telas/conta-de-teste.png) |
+
 *(Telas com os dados de demonstração do seed.)*
 
 ## O fluxo
@@ -98,9 +102,23 @@ A coleta de assinaturas fica atrás de um adaptador ([`backend/src/assinaturas/p
 - **Monitoramento**: `GET /api/saude` responde 200 só com o banco acessível (usado no healthcheck do container).
 - **Segurança de acesso**: limite de tentativas no login e nos links públicos; perfil e situação do usuário conferidos no banco a cada requisição (desativar alguém vale na hora); troca de senha pelo próprio usuário.
 
+## Identidade visual
+
+O sistema segue a base visual da RSF: **navy `#09244D`** e **azul RSF `#134B9E`**, tipografia **Arial**, cartões com régua no alto, rótulos em caixa alta azul e tabelas de cabeçalho navy. A cor é julgamento, não enfeite: **verde** (`#2F7A4D`) bom, **âmbar** (`#B7851A`) atenção, **vermelho** (`#B62A33`) ruim. O logotipo da RSF aparece no menu, nas telas de entrada, nas páginas do cliente e no cabeçalho do termo em PDF.
+
+Tudo isso está em um arquivo só de aparência — [`frontend/src/styles.css`](frontend/src/styles.css), que começa pela lista de cores — e no logotipo em [`frontend/src/components/LogoRsf.tsx`](frontend/src/components/LogoRsf.tsx) (PDF: `backend/src/documentos/logo-rsf.ts`). Para ajustar uma cor da marca, basta mudar o valor no alto do `styles.css`.
+
+## Conta de teste
+
+Um login só, que **vê e opera o sistema como qualquer perfil**. No menu aparece o seletor **Conta de teste · ver como**, com Administrador, Incorporadora, cada Construtora cadastrada, Central de Relacionamento e Auditor; ao trocar, o sistema passa a se comportar exatamente como para aquele perfil (mesmas telas, mesmo escopo, mesmas regras).
+
+- Criar: `SEED_CONTA_TESTE=1` no `.env` cria `teste@sysentrega.local` (senha de `SEED_SENHA_PADRAO`). Ou marque **Conta de teste** em Cadastros → Usuários.
+- Ligar: `CONTAS_DE_TESTE=1` no servidor. Sem isso, a conta é apenas um usuário de leitura e a troca de perfil não existe.
+- Tudo o que a conta de teste faz fica registrado como tal na auditoria, no perfil escolhido — **inclusive assinaturas de termos**. Por isso o recomendado é usá-la em **homologação e treinamento** e deixar `CONTAS_DE_TESTE` vazio em operação.
+
 ## Demonstração em HTML
 
-`npm run build:demo` (em `frontend/`) gera **um único arquivo HTML** com as telas do sistema e um servidor simulado dentro da própria página (`frontend/src/demo`), com dados fictícios. Serve para apresentar e aprovar telas e fluxo sem instalar nada: troca de perfil, simulação de queda de sinal e um roteiro com os pontos a aprovar. Nada é gravado.
+`npm run build:demo` (em `frontend/`) gera **um único arquivo HTML** com as telas do sistema e um servidor simulado dentro da própria página (`frontend/src/demo`), com dados fictícios. Serve para apresentar e aprovar telas e fluxo sem instalar nada: entra já na conta de teste (troca de perfil em "Ver como"), simula queda de sinal e traz um roteiro com os pontos a aprovar. Nada é gravado.
 
 ```bash
 cd frontend && npm install && npm run build:demo
@@ -211,6 +229,7 @@ Com a assinatura interna, o código de uso único vai para o e-mail do cliente p
 Todas sob `/api`.
 
 - `POST /auth/login` · `GET /auth/me` · `POST /auth/trocar-senha`
+- `GET /auth/perfis-de-teste` · `POST /auth/ver-como` — conta de teste
 - `GET/POST /unidades` · `GET/PATCH /unidades/:id` · `GET /unidades/:id/historico`
 - `POST /unidades/:id/liberar` — libera para a etapa, ou reapresenta após pendências
 - `POST /unidades/:id/anotacoes` · `GET /unidades/exportar.csv`

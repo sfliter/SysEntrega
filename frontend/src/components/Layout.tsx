@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { PERFIL } from '../fluxo';
-import { Erro, Marca, Modal, useAcao } from './Basicos';
+import { Erro, Marca, Modal, useAcao, useCarregar } from './Basicos';
 import { FaixaConexao, Protecao } from './Conexao';
 
 export default function Layout() {
@@ -33,6 +33,7 @@ export default function Layout() {
           ))}
         </nav>
         <div className="lateral-pe">
+          {usuario.contaTeste && <VerComo />}
           <div className="quem">
             <strong>{usuario.nome}</strong>
             <span>
@@ -50,12 +51,53 @@ export default function Layout() {
       </aside>
       <main className="conteudo">
         <FaixaConexao />
-        <Protecao key={local.pathname}>
+        {/* trocar de perfil (conta de teste) refaz a tela com os dados do novo perfil */}
+        <Protecao key={`${local.pathname}|${perfil}|${usuario.organizacaoId ?? ''}`}>
           <Outlet />
         </Protecao>
       </main>
       {trocando && <TrocarSenha aoFechar={() => setTrocando(false)} />}
     </div>
+  );
+}
+
+// Conta de teste: escolhe com que perfil ver o sistema. Tudo o que ela fizer
+// fica registrado como conta de teste, no perfil escolhido.
+function VerComo() {
+  const { usuario, verComo } = useAuth();
+  const navegar = useNavigate();
+  const { dados } = useCarregar<{ perfil: string; organizacaoId: string | null; rotulo: string }[]>(
+    async () => (await api.get('/auth/perfis-de-teste')).data,
+    [],
+  );
+  const { enviando, erro, executar } = useAcao();
+  const chave = (o: { perfil: string; organizacaoId: string | null }) => `${o.perfil}|${o.organizacaoId ?? ''}`;
+  // A incorporadora e a central têm uma opção só: vale o perfil
+  const atual =
+    dados?.find((o) => chave(o) === chave({ perfil: usuario!.perfil, organizacaoId: usuario!.organizacaoId })) ??
+    dados?.find((o) => o.perfil === usuario!.perfil);
+
+  return (
+    <label className="ver-como" htmlFor="ver-como">
+      <span>Conta de teste · ver como</span>
+      <select
+        id="ver-como"
+        disabled={enviando || !dados}
+        value={atual ? chave(atual) : ''}
+        onChange={async (e) => {
+          const opcao = dados?.find((o) => chave(o) === e.target.value);
+          if (opcao && (await executar(() => verComo(opcao.perfil, opcao.organizacaoId)))) navegar('/');
+        }}
+      >
+        {!atual && <option value="">Escolha um perfil…</option>}
+        {dados?.map((o) => (
+          <option key={chave(o)} value={chave(o)}>
+            {o.rotulo}
+          </option>
+        ))}
+      </select>
+      {erro && <small>{erro}</small>}
+    </label>
   );
 }
 

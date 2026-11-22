@@ -6,12 +6,13 @@ import { Modal } from '../components/Basicos';
 import { useFila } from '../components/Conexao';
 import { fila } from '../fila';
 import { dataHora, formatarCpfCnpj, METODO } from '../fluxo';
-import { fotoDaPrevia, PERSONAS, recomecar } from './servidor';
+import LogoRsf from '../components/LogoRsf';
+import { CONTA_DE_TESTE, fotoDaPrevia, recomecar } from './servidor';
 
 // Faixa da demonstração: troca de perfil, simulação de falta de sinal,
 // roteiro e a janela do termo (que na operação é um PDF).
 export function Moldura({ children }: { children: ReactNode }) {
-  const { usuario, entrar } = useAuth();
+  const { usuario, entrar, verComo } = useAuth();
   const navegar = useNavigate();
   const local = useLocation();
   useFila(); // redesenha a faixa quando o sinal simulado muda
@@ -27,16 +28,17 @@ export function Moldura({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('demo:documento', abrir);
   }, []);
 
-  async function trocar(email: string) {
-    await entrar(email, 'demo');
-    navegar('/');
-  }
-
   async function reiniciar() {
     fila.simularSemSinal(false);
     for (const op of fila.estado().ops) await fila.descartar(op.id);
+    const perfil = usuario?.perfil;
+    const construtora = usuario?.organizacaoNome;
     recomecar();
-    await entrar(usuario?.email ?? PERSONAS[0].email, 'demo');
+    // volta ao mesmo perfil em que a pessoa estava
+    await entrar(CONTA_DE_TESTE, 'demo');
+    const { data } = await api.get('/auth/perfis-de-teste');
+    const opcao = data.find((o: any) => o.perfil === perfil && (perfil !== 'CONSTRUTORA' || o.rotulo.includes(construtora ?? ''))) ?? data[0];
+    await verComo(opcao.perfil, opcao.organizacaoId);
     navegar('/');
     setVersao((v) => v + 1);
   }
@@ -54,16 +56,9 @@ export function Moldura({ children }: { children: ReactNode }) {
           </>
         ) : (
           <>
-            <label className="demo-campo" htmlFor="demo-perfil">
-              Ver como
-              <select id="demo-perfil" value={usuario?.email ?? ''} onChange={(e) => trocar(e.target.value)}>
-                {PERSONAS.map((p) => (
-                  <option key={p.email} value={p.email}>
-                    {p.rotulo}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <span className="demo-texto demo-dica">
+              Troque de perfil em <strong>Conta de teste · ver como</strong>, no menu.
+            </span>
             <button
               type="button"
               id="demo-sinal"
@@ -102,15 +97,21 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
           que você fizer aqui é gravado, e <strong>Recomeçar</strong> devolve tudo ao início. Onde o sistema pede
           senha, qualquer texto serve.
         </p>
+        <p>
+          Você está na <strong>conta de teste</strong>: um login só, que vê e opera o sistema como qualquer perfil. A
+          troca fica em <em>Conta de teste · ver como</em>, no menu. O que você fizer aparece no histórico como
+          &ldquo;Conta de Teste&rdquo;, no perfil escolhido; as pessoas que já aparecem nos dados (Carlos, Inês,
+          Renata) são usuários comuns de cada empresa.
+        </p>
 
         <h3>Um caminho de ponta a ponta</h3>
         <ol>
           <li>
-            <strong>Construtora — Carlos.</strong> Abra a unidade <em>Torre A · 202</em>, libere-a e ofereça horários
-            de vistoria.
+            <strong>Ver como Construtora — Construtora Exemplo.</strong> Abra a unidade <em>Torre A · 202</em>,
+            libere-a e ofereça horários de vistoria.
           </li>
           <li>
-            <strong>Incorporadora — Inês.</strong> Na mesma unidade, escolha um horário, inicie a vistoria, avalie os
+            <strong>Ver como Incorporadora.</strong> Na mesma unidade, escolha um horário, inicie a vistoria, avalie os
             itens (marque um como <em>Não conforme</em> para ver as pendências, ou todos conformes para emitir o
             termo) e assine.
           </li>
@@ -118,7 +119,7 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
             <strong>Construtora.</strong> Assine o termo. A unidade passa para a etapa 2.
           </li>
           <li>
-            <strong>Incorporadora</strong> repassa; <strong>Central de Relacionamento — Renata</strong> confere e as
+            <strong>Incorporadora</strong> repassa; <strong>Central de Relacionamento</strong> confere e as
             duas assinam.
           </li>
           <li>
@@ -126,7 +127,7 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
             cliente para ver a página dele. Depois da vistoria, o cliente assina pelo link com o código.
           </li>
           <li>
-            <strong>Auditor — Alberto.</strong> Veja a trilha completa em Auditoria e confira a integridade.
+            <strong>Auditor.</strong> Veja a trilha completa em Auditoria e confira a integridade.
           </li>
         </ol>
         <p className="suave">
@@ -174,6 +175,10 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
           <li>
             <strong>Avisos por e-mail</strong> a cada mudança de situação: prontos, ligados por configuração.
           </li>
+          <li>
+            <strong>Conta de teste na operação:</strong> ela opera como qualquer perfil, inclusive assinando. Por isso
+            só funciona com o recurso ligado no servidor, e o recomendado é usá-la em homologação.
+          </li>
         </ul>
       </div>
     </Modal>
@@ -205,7 +210,7 @@ function Termo({ caminho, aoFechar }: { caminho: string; aoFechar: () => void })
       {c && dados && (
         <article className="papel">
           <header className="papel-topo">
-            <span className="papel-marca">RSF · SYSENTREGA</span>
+            <LogoRsf className="papel-marca" />
             <h3>{c.titulo}</h3>
             <span>
               Protocolo {c.protocolo} · Emitido em {dataHora(c.emitidoEm)}

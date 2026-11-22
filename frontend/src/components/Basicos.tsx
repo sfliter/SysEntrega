@@ -2,22 +2,13 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { mensagemDeErro } from '../api';
 import { STATUS } from '../fluxo';
 import type { StatusUnidade } from '../tipos';
+import LogoRsf from './LogoRsf';
 
 export function Marca({ clara = false }: { clara?: boolean }) {
   return (
     <div className={`marca ${clara ? 'marca-clara' : ''}`}>
-      <svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true">
-        <rect width="64" height="64" rx="14" fill="#0b2a5b" />
-        <path d="M12 32h40" stroke="#5b7fb8" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="12" cy="32" r="5" fill="#bf9b30" />
-        <circle cx="25.3" cy="32" r="5" fill="#bf9b30" />
-        <circle cx="38.6" cy="32" r="5" fill="#bf9b30" />
-        <circle cx="52" cy="32" r="6.5" fill="#0b2a5b" stroke="#bf9b30" strokeWidth="3" />
-      </svg>
-      <div>
-        <span className="marca-rsf">RSF</span>
-        <span className="marca-nome">SysEntrega</span>
-      </div>
+      <LogoRsf className="marca-logo" />
+      <span className="marca-nome">SysEntrega</span>
     </div>
   );
 }

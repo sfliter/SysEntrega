@@ -145,6 +145,9 @@ model Usuario {
   organizacaoId String?
   organizacao   Organizacao? @relation(fields: [organizacaoId], references: [id])
   ativo         Boolean      @default(true)
+  // Conta de teste: pode ver o sistema como qualquer perfil ("Ver como").
+  // Só tem efeito com CONTAS_DE_TESTE=1 no servidor.
+  contaTeste    Boolean      @default(false)
   criadoEm      DateTime     @default(now())
 }
 

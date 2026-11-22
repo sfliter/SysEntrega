@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { dataHoraBR } from '../comum/util';
 import { ArmazenamentoService } from '../vistorias/armazenamento.service';
+import { LOGO_RSF } from './logo-rsf';
 import {
   AssinaturaTermo,
   ConteudoTermo,
@@ -11,15 +12,17 @@ import {
   ROTULO_RESULTADO_VISTORIA,
 } from './termo';
 
-const AZUL = '#0B2A5B';
-const DOURADO = '#BF9B30';
-const TINTA = '#1B2430';
-const CINZA = '#5E6875';
-const FIO = '#D9DEE5';
+// Paleta oficial da RSF
+const AZUL = '#09244D'; // navy
+const DESTAQUE = '#134B9E'; // azul RSF
+const TINTA = '#0D0D0D';
+const CINZA = '#5C6B80';
+const FIO = '#D5DDE8';
+// A cor é julgamento: verde bom, âmbar atenção, vermelho ruim
 const COR_RESULTADO: Record<string, string> = {
-  CONFORME: '#1E7B3A',
-  RESSALVA: '#9A6A00',
-  NAO_CONFORME: '#B3261E',
+  CONFORME: '#2F7A4D',
+  RESSALVA: '#8A6410',
+  NAO_CONFORME: '#B62A33',
   NAO_SE_APLICA: CINZA,
 };
 
@@ -93,7 +96,7 @@ export class TermoPdfService {
     const secao = (titulo: string) => {
       espaco(60);
       doc.moveDown(0.9);
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(DOURADO)
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(DESTAQUE)
         .text(limpo(titulo).toUpperCase(), x0, doc.y, { characterSpacing: 1.2 });
       const y = doc.y + 3;
       doc.moveTo(x0, y).lineTo(x0 + largura, y).lineWidth(0.6).strokeColor(FIO).stroke();
@@ -128,11 +131,23 @@ export class TermoPdfService {
 
     // ---------- cabeçalho ----------
     doc.rect(0, 0, doc.page.width, 96).fill(AZUL);
-    doc.rect(0, 96, doc.page.width, 3).fill(DOURADO);
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(DOURADO)
-      .text('RSF · SYSENTREGA', x0, 26, { characterSpacing: 1.5 });
+    doc.rect(0, 96, doc.page.width, 3).fill(DESTAQUE);
+    // logotipo da RSF, em branco sobre o navy
+    const alturaLogo = 15;
+    doc.save();
+    doc.translate(x0, 22).scale(alturaLogo / LOGO_RSF.altura);
+    for (const parte of LOGO_RSF.partes) {
+      doc.save();
+      const [m11, m12, m21, m22, dx, dy] = parte.matriz;
+      doc.transform(m11, m12, m21, m22, dx, dy);
+      doc.path(parte.d).fill('#FFFFFF');
+      doc.restore();
+    }
+    doc.restore();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#A9C1E6')
+      .text('SYSENTREGA', x0 + (LOGO_RSF.largura * alturaLogo) / LOGO_RSF.altura + 10, 27, { characterSpacing: 1.5 });
     doc.font('Helvetica-Bold').fontSize(16).fillColor('#FFFFFF')
-      .text(limpo(c.titulo), x0, 42, { width: largura });
+      .text(limpo(c.titulo), x0, 46, { width: largura });
     doc.font('Helvetica').fontSize(9).fillColor('#C9D3E3')
       .text(limpo(`Protocolo ${c.protocolo}  ·  Emitido em ${quando(c.emitidoEm)}`), x0, doc.y + 4);
     doc.y = 112;

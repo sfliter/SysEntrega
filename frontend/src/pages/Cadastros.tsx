@@ -119,13 +119,13 @@ export default function Cadastros() {
             caminho: '/usuarios',
             singular: 'usuário',
             podeEditar: admin,
-            inicial: { perfil: 'CONSTRUTORA', ativo: true },
+            inicial: { perfil: 'CONSTRUTORA', ativo: true, contaTeste: false },
             colunas: [
               { rotulo: 'Nome', valor: (l: Linha) => <strong>{l.nome}</strong> },
               { rotulo: 'E-mail', valor: (l: Linha) => l.email },
               { rotulo: 'Perfil', valor: (l: Linha) => PERFIL[l.perfil as Perfil] },
               { rotulo: 'Organização', valor: (l: Linha) => l.organizacao?.nome ?? '—' },
-              { rotulo: 'Situação', valor: ativo },
+              { rotulo: 'Situação', valor: (l: Linha) => (<>{ativo(l)}{l.contaTeste && <> <Pill tom="atencao">Teste</Pill></>}</>) },
             ],
             campos: [
               { nome: 'nome', rotulo: 'Nome completo', obrigatorio: true },
@@ -135,6 +135,7 @@ export default function Cadastros() {
               { nome: 'organizacaoId', rotulo: 'Organização', tipo: 'select', opcoes: opcoesOrg(), ajuda: 'Obrigatória para a construtora: define quais unidades o usuário vê.' },
               { nome: 'senha', rotulo: 'Senha', tipo: 'senha', obrigatorio: true, opcionalAoEditar: true, ajuda: 'Mínimo de 8 caracteres. Ao editar, deixe em branco para manter a atual.' },
               { nome: 'ativo', rotulo: 'Ativo', tipo: 'marcar' },
+              { nome: 'contaTeste', rotulo: 'Conta de teste', tipo: 'marcar', ajuda: 'Pode ver o sistema como qualquer perfil. Só funciona com as contas de teste ligadas no servidor; use em homologação.' },
             ] as Campo[],
           },
         ]

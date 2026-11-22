@@ -9,8 +9,19 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Perfil } from '@prisma/client';
 import { Request } from 'express';
+import { UsuarioLogado } from '../comum/contexto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ROLES_KEY } from './roles.decorator';
+
+export function contasDeTesteLigadas(): boolean {
+  return process.env.CONTAS_DE_TESTE === '1';
+}
+
+// Tudo o que a conta de teste faz fica identificado como tal — na auditoria
+// e nos termos que ela assinar.
+export function nomeDeTeste(nome: string): string {
+  return /teste/i.test(nome) ? nome : `${nome} (conta de teste)`;
+}
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -25,8 +36,11 @@ export class JwtAuthGuard implements CanActivate {
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) throw new UnauthorizedException('Token não informado');
     let sub: string;
+    let verComo: { perfil?: string; organizacaoId?: string | null } | undefined;
     try {
-      sub = (await this.jwt.verifyAsync(token)).sub;
+      const conteudo = await this.jwt.verifyAsync(token);
+      sub = conteudo.sub;
+      verComo = conteudo.verComo;
     } catch {
       throw new UnauthorizedException('Sessão inválida ou expirada');
     }
@@ -40,7 +54,7 @@ export class JwtAuthGuard implements CanActivate {
     if (!usuario || !usuario.ativo) {
       throw new UnauthorizedException('Usuário desativado');
     }
-    (request as any).user = {
+    const logado: UsuarioLogado = {
       sub: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
@@ -48,6 +62,23 @@ export class JwtAuthGuard implements CanActivate {
       organizacaoId: usuario.organizacaoId,
       organizacaoNome: usuario.organizacao?.nome ?? null,
     };
+    // Conta de teste: age com o perfil escolhido em "Ver como". Vale só para
+    // quem está marcado como conta de teste E com o recurso ligado no
+    // servidor — o token sozinho não dá esse poder a ninguém.
+    if (usuario.contaTeste && contasDeTesteLigadas()) {
+      logado.contaTeste = true;
+      logado.perfilReal = usuario.perfil;
+      logado.nome = nomeDeTeste(usuario.nome);
+      if (verComo?.perfil && verComo.perfil in Perfil) {
+        logado.perfil = verComo.perfil as Perfil;
+        const org = verComo.organizacaoId
+          ? await this.prisma.organizacao.findUnique({ where: { id: verComo.organizacaoId } })
+          : null;
+        logado.organizacaoId = org?.id ?? null;
+        logado.organizacaoNome = org?.nome ?? null;
+      }
+    }
+    (request as any).user = logado;
     return true;
   }
 }

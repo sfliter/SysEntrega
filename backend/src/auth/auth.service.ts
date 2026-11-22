@@ -1,10 +1,11 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { TipoAtor } from '@prisma/client';
+import { Perfil, TipoAtor, TipoOrganizacao } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { Contexto, UsuarioLogado } from '../comum/contexto';
 import { PrismaService } from '../prisma/prisma.service';
+import { contasDeTesteLigadas, nomeDeTeste } from './guards';
 
 // Hash de mentira para gastar o mesmo tempo quando o e-mail não existe —
 // sem isso o tempo de resposta revela quais e-mails têm cadastro.
@@ -42,13 +43,15 @@ export class AuthService {
       });
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
+    const deTeste = usuario.contaTeste && contasDeTesteLigadas();
     const payload: UsuarioLogado = {
       sub: usuario.id,
-      nome: usuario.nome,
+      nome: deTeste ? nomeDeTeste(usuario.nome) : usuario.nome,
       email: usuario.email,
       perfil: usuario.perfil,
       organizacaoId: usuario.organizacaoId,
       organizacaoNome: usuario.organizacao?.nome ?? null,
+      ...(deTeste ? { contaTeste: true, perfilReal: usuario.perfil } : {}),
     };
     await this.auditoria.registrar({
       acao: 'LOGIN',
@@ -64,7 +67,69 @@ export class AuthService {
         ...origem,
       },
     });
-    return { accessToken: await this.jwt.signAsync(payload), usuario: payload };
+    return { accessToken: await this.jwt.signAsync({ sub: usuario.id }), usuario: payload };
+  }
+
+  // ---------- conta de teste: "Ver como" ----------
+
+  private exigirContaDeTeste(ctx: Contexto) {
+    if (!ctx.usuario.contaTeste) {
+      throw new ForbiddenException(
+        contasDeTesteLigadas()
+          ? 'Só uma conta de teste pode trocar de perfil'
+          : 'As contas de teste estão desligadas neste servidor (CONTAS_DE_TESTE)',
+      );
+    }
+  }
+
+  // Os perfis que a conta de teste pode assumir. A construtora aparece uma
+  // vez por empresa: é a empresa que define quais unidades ela enxerga.
+  async perfisDeTeste(ctx: Contexto) {
+    this.exigirContaDeTeste(ctx);
+    const orgs = await this.prisma.organizacao.findMany({
+      where: { ativo: true },
+      orderBy: [{ tipo: 'asc' }, { nome: 'asc' }],
+    });
+    const doTipo = (tipo: TipoOrganizacao) => orgs.filter((o) => o.tipo === tipo);
+    const primeira = (tipo: TipoOrganizacao) => doTipo(tipo)[0]?.id ?? null;
+    return [
+      { perfil: Perfil.ADMINISTRADOR, organizacaoId: null, rotulo: 'Administrador' },
+      { perfil: Perfil.INCORPORADORA, organizacaoId: primeira(TipoOrganizacao.INCORPORADORA), rotulo: 'Incorporadora' },
+      ...doTipo(TipoOrganizacao.CONSTRUTORA).map((o) => ({
+        perfil: Perfil.CONSTRUTORA,
+        organizacaoId: o.id,
+        rotulo: `Construtora — ${o.nome}`,
+      })),
+      { perfil: Perfil.RELACIONAMENTO, organizacaoId: primeira(TipoOrganizacao.CENTRAL_RELACIONAMENTO), rotulo: 'Central de Relacionamento' },
+      { perfil: Perfil.AUDITOR, organizacaoId: null, rotulo: 'Auditor (só leitura)' },
+    ];
+  }
+
+  async verComo(ctx: Contexto, perfil: Perfil, organizacaoId: string | null) {
+    this.exigirContaDeTeste(ctx);
+    const opcoes = await this.perfisDeTeste(ctx);
+    const opcao = opcoes.find((o) => o.perfil === perfil && (o.organizacaoId ?? null) === (organizacaoId ?? null));
+    if (!opcao) throw new BadRequestException('Perfil de teste inválido');
+    await this.auditoria.registrar({
+      acao: 'CONTA_TESTE_VER_COMO',
+      descricao: `${ctx.usuario.nome} passou a ver o sistema como ${opcao.rotulo}`,
+      entidade: 'Usuario',
+      entidadeId: ctx.usuario.sub,
+      ator: ctx.ator,
+    });
+    const org = opcao.organizacaoId
+      ? await this.prisma.organizacao.findUnique({ where: { id: opcao.organizacaoId } })
+      : null;
+    const usuario: UsuarioLogado = {
+      ...ctx.usuario,
+      perfil,
+      organizacaoId: org?.id ?? null,
+      organizacaoNome: org?.nome ?? null,
+    };
+    return {
+      accessToken: await this.jwt.signAsync({ sub: ctx.usuario.sub, verComo: { perfil, organizacaoId: org?.id ?? null } }),
+      usuario,
+    };
   }
 
   async trocarSenha(ctx: Contexto, senhaAtual: string, novaSenha: string) {

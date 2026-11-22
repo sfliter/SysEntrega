@@ -136,7 +136,7 @@ async function estado(unidadeId, token) {
 
 async function fluxoCompleto(prisma) {
   console.log('\nFluxo completo com assinatura interna');
-  const api = await subirApi({ ASSINATURA_PROVEDOR: 'interno' });
+  const api = await subirApi({ ASSINATURA_PROVEDOR: 'interno', CONTAS_DE_TESTE: '1' });
   try {
     const [admin, construtora, outra, incorp, relac, auditor] = await Promise.all(
       ['admin@sysentrega.local', 'construtora@exemplo.com', 'outra.construtora@exemplo.com',
@@ -439,6 +439,37 @@ async function fluxoCompleto(prisma) {
     await exigir(200, 'POST', '/auth/trocar-senha', { token: outra, corpo: { senhaAtual: 'NovaSenha#2026', novaSenha: SENHA } });
     ok('usuário troca a própria senha, conferindo a atual');
 
+    // Conta de teste: um login que vê (e opera) o sistema como qualquer perfil
+    const login = await exigir(200, 'POST', '/auth/login', { corpo: { email: 'teste@sysentrega.local', senha: SENHA } });
+    assert.equal(login.usuario.contaTeste, true);
+    assert.equal(login.usuario.perfil, 'AUDITOR', 'sem escolher perfil, a conta de teste só lê');
+    await exigir(403, 'POST', '/unidades', { token: login.accessToken, corpo: { empreendimentoId: emp.id, numeros: ['X2'] } });
+    const opcoes = await exigir(200, 'GET', '/auth/perfis-de-teste', { token: login.accessToken });
+    assert.deepEqual([...new Set(opcoes.map((o) => o.perfil))].sort(), ['ADMINISTRADOR', 'AUDITOR', 'CONSTRUTORA', 'INCORPORADORA', 'RELACIONAMENTO']);
+    const verComo = async (rotulo) => {
+      const o = opcoes.find((x) => x.rotulo.includes(rotulo));
+      return (await exigir(200, 'POST', '/auth/ver-como', { token: login.accessToken, corpo: { perfil: o.perfil, organizacaoId: o.organizacaoId } })).accessToken;
+    };
+    const tIncorp = await verComo('Incorporadora');
+    const [unT] = await exigir(201, 'POST', '/unidades', { token: tIncorp, corpo: { empreendimentoId: emp.id, bloco: 'Teste', numeros: [`Q${Date.now().toString().slice(-7)}`] } });
+    const tConstrutora = await verComo('Construtora Exemplo');
+    const tOutra = await verComo('Outra Construtora');
+    await exigir(404, 'GET', `/unidades/${unT.id}`, { token: tOutra });
+    await exigir(403, 'POST', `/unidades/${unT.id}/liberar`, { token: tIncorp, corpo: {} });
+    await exigir(201, 'POST', `/unidades/${unT.id}/liberar`, { token: tConstrutora, corpo: {} });
+    const histT = await exigir(200, 'GET', `/unidades/${unT.id}/historico`, { token: tIncorp });
+    const liberou = histT.find((e) => e.acao === 'UNIDADE_LIBERADA');
+    assert.match(liberou.atorNome, /teste/i, 'a ação da conta de teste fica identificada');
+    assert.equal(liberou.atorPerfil, 'CONSTRUTORA');
+    assert.equal(liberou.organizacao, 'Construtora Exemplo Ltda');
+    const tAuditor = await verComo('Auditor');
+    await exigir(403, 'POST', `/unidades/${unT.id}/anotacoes`, { token: tAuditor, corpo: { texto: 'auditor não escreve' } });
+    assert.ok((await exigir(200, 'GET', '/auditoria?acao=CONTA_TESTE_VER_COMO', { token: tAuditor })).total >= 4);
+    // Usuário comum não troca de perfil, nem forjando o pedido
+    await exigir(403, 'GET', '/auth/perfis-de-teste', { token: incorp });
+    await exigir(403, 'POST', '/auth/ver-como', { token: construtora, corpo: { perfil: 'ADMINISTRADOR' } });
+    ok('conta de teste: um login vê e opera como cada perfil, com escopo e regras do perfil escolhido, e tudo fica identificado');
+
     const alvoForca = `forca${Date.now()}@exemplo.com`;
     for (let i = 0; i < 10; i++) await exigir(401, 'POST', '/auth/login', { corpo: { email: alvoForca, senha: 'x' } });
     await exigir(429, 'POST', '/auth/login', { corpo: { email: alvoForca, senha: 'x' } });
@@ -491,12 +522,19 @@ async function fluxoRsfSigner() {
   const signer = await subirRsfSignerFalso();
   const api = await subirApi({
     ASSINATURA_PROVEDOR: 'rsf-signer',
+    CONTAS_DE_TESTE: '', // desligadas nesta instância, mesmo que o ambiente as ligue
     RSF_SIGNER_URL: `http://127.0.0.1:${PORTA_SIGNER}`,
     RSF_SIGNER_API_KEY: 'chave-de-teste',
     RSF_SIGNER_WEBHOOK_SECRET: SEGREDO_WEBHOOK,
   });
   try {
     const [construtora, incorp] = await Promise.all(['construtora@exemplo.com', 'incorporadora@exemplo.com'].map(entrar));
+    // Aqui o servidor sobe sem CONTAS_DE_TESTE: a conta de teste é só um usuário de leitura
+    const teste = await exigir(200, 'POST', '/auth/login', { corpo: { email: 'teste@sysentrega.local', senha: SENHA } });
+    assert.equal(teste.usuario.contaTeste, undefined);
+    await exigir(403, 'POST', '/auth/ver-como', { token: teste.accessToken, corpo: { perfil: 'ADMINISTRADOR' } });
+    await exigir(403, 'GET', '/auth/perfis-de-teste', { token: teste.accessToken });
+    ok('com as contas de teste desligadas no servidor, a troca de perfil não existe');
     const emp = (await exigir(200, 'GET', '/empreendimentos', { token: incorp })).find((e) => e.codigo === '01');
     const [un] = await exigir(201, 'POST', '/unidades', {
       token: incorp, corpo: { empreendimentoId: emp.id, bloco: 'Teste', numeros: [`S${Date.now().toString().slice(-7)}`] },

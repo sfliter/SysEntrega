@@ -29,6 +29,9 @@ export interface Usuario {
   perfil: Perfil;
   organizacaoId: string | null;
   organizacaoNome: string | null;
+  // Conta de teste: pode ver o sistema como qualquer perfil
+  contaTeste?: boolean;
+  perfilReal?: Perfil;
 }
 
 export interface UnidadeResumo {

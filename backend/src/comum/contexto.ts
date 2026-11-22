@@ -9,6 +9,9 @@ export interface UsuarioLogado {
   perfil: Perfil;
   organizacaoId: string | null;
   organizacaoNome: string | null;
+  // Conta de teste vendo o sistema como outro perfil (ver auth/guards.ts)
+  contaTeste?: boolean;
+  perfilReal?: Perfil;
 }
 
 // Quem está agindo — vai inteiro para a trilha de auditoria

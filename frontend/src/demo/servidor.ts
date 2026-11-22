@@ -419,15 +419,26 @@ interface Pedido {
   corpo: any;
   q: Record<string, string>;
 }
-type Rota = [string, RegExp, (p: Pedido, ...ids: string[]) => unknown, 'publica'?];
+// 'conta-teste': a troca de perfil vale mesmo quando o perfil atual é só de leitura
+type Rota = [string, RegExp, (p: Pedido, ...ids: string[]) => unknown, ('publica' | 'conta-teste')?];
 
 const rotas: Rota[] = [
   ['POST', /^\/auth\/login$/, ({ corpo }) => {
     const usuario = db.usuarios.find((x) => x.email === String(corpo.email).toLowerCase());
     if (!usuario) throw new Falha(401, 'E-mail ou senha inválidos');
-    const u: Usuario = { sub: usuario.id, nome: usuario.nome, email: usuario.email, perfil: usuario.perfil, organizacaoId: usuario.organizacaoId, organizacaoNome: orgNome(usuario.organizacaoId) };
+    const u: Usuario = { sub: usuario.id, nome: usuario.nome, email: usuario.email, perfil: usuario.perfil, organizacaoId: usuario.organizacaoId, organizacaoNome: orgNome(usuario.organizacaoId), ...(usuario.contaTeste ? { contaTeste: true, perfilReal: usuario.perfil } : {}) };
     return { accessToken: `demo.${usuario.id}`, usuario: u };
   }, 'publica'],
+  ['GET', /^\/auth\/perfis-de-teste$/, ({ u }) => (u.contaTeste ? perfisDeTeste() : recusar('Só uma conta de teste pode trocar de perfil'))],
+  ['POST', /^\/auth\/ver-como$/, ({ u, corpo }) => {
+    if (!u.contaTeste) recusar('Só uma conta de teste pode trocar de perfil');
+    const opcao = perfisDeTeste().find((o) => o.perfil === corpo.perfil && (o.organizacaoId ?? null) === (corpo.organizacaoId ?? null)) ?? invalido('Perfil de teste inválido');
+    registrar({ acao: 'CONTA_TESTE_VER_COMO', descricao: `${u.nome} passou a ver o sistema como ${opcao.rotulo}`, ator: atorDe(u), entidade: 'Usuario' });
+    return {
+      accessToken: `demo.${u.sub}.${opcao.perfil}.${opcao.organizacaoId ?? ''}`,
+      usuario: { ...u, perfil: opcao.perfil, organizacaoId: opcao.organizacaoId, organizacaoNome: orgNome(opcao.organizacaoId) },
+    };
+  }, 'conta-teste'],
   ['GET', /^\/auth\/me$/, ({ u }) => u],
   ['POST', /^\/auth\/trocar-senha$/, () => ({ ok: true })],
 
@@ -952,7 +963,7 @@ function despachar(metodo: string, caminho: string, corpo: unknown, q: Record<st
     if (m !== metodo) continue;
     const casou = caminho.match(padrao);
     if (!casou) continue;
-    if (!publica && !u) throw new Falha(401, 'Sessão inválida ou expirada');
+    if (publica !== 'publica' && !u) throw new Falha(401, 'Sessão inválida ou expirada');
     if (!publica && u?.perfil === 'AUDITOR' && metodo !== 'GET') recusar('Perfil somente leitura: esta ação não é permitida');
     return tratar({ u: u as Usuario, corpo, q }, ...casou.slice(1));
   }
@@ -960,9 +971,28 @@ function despachar(metodo: string, caminho: string, corpo: unknown, q: Record<st
 }
 
 function usuarioDoToken(cabecalho: unknown): Usuario | null {
-  const id = String(cabecalho ?? '').replace('Bearer demo.', '');
+  const [id, perfil, orgId] = String(cabecalho ?? '').replace('Bearer demo.', '').split('.');
   const x = db.usuarios.find((y) => y.id === id);
-  return x ? { sub: x.id, nome: x.nome, email: x.email, perfil: x.perfil, organizacaoId: x.organizacaoId, organizacaoNome: orgNome(x.organizacaoId) } : null;
+  if (!x) return null;
+  const u: Usuario = { sub: x.id, nome: x.nome, email: x.email, perfil: x.perfil, organizacaoId: x.organizacaoId, organizacaoNome: orgNome(x.organizacaoId) };
+  if (x.contaTeste) {
+    u.contaTeste = true;
+    u.perfilReal = x.perfil;
+    if (perfil) Object.assign(u, { perfil, organizacaoId: orgId || null, organizacaoNome: orgNome(orgId || null) });
+  }
+  return u;
+}
+
+// Os perfis que a conta de teste pode assumir (como no sistema real)
+function perfisDeTeste() {
+  const doTipo = (tipo: string) => db.orgs.filter((o) => o.tipo === tipo && o.ativo);
+  return [
+    { perfil: 'INCORPORADORA', organizacaoId: doTipo('INCORPORADORA')[0]?.id ?? null, rotulo: 'Incorporadora' },
+    ...doTipo('CONSTRUTORA').map((o) => ({ perfil: 'CONSTRUTORA', organizacaoId: o.id, rotulo: `Construtora — ${o.nome}` })),
+    { perfil: 'RELACIONAMENTO', organizacaoId: doTipo('CENTRAL_RELACIONAMENTO')[0]?.id ?? null, rotulo: 'Central de Relacionamento' },
+    { perfil: 'AUDITOR', organizacaoId: null, rotulo: 'Auditor (só leitura)' },
+    { perfil: 'ADMINISTRADOR', organizacaoId: null, rotulo: 'Administrador' },
+  ];
 }
 
 export const adaptadorDemo: AxiosAdapter = (config: InternalAxiosRequestConfig) =>
@@ -997,13 +1027,8 @@ export const adaptadorDemo: AxiosAdapter = (config: InternalAxiosRequestConfig) 
 
 // ---------- dados iniciais ----------
 
-export const PERSONAS = [
-  { email: 'incorporadora@exemplo.com', rotulo: 'Incorporadora — Inês' },
-  { email: 'construtora@exemplo.com', rotulo: 'Construtora — Carlos' },
-  { email: 'relacionamento@exemplo.com', rotulo: 'Central de Relacionamento — Renata' },
-  { email: 'auditor@exemplo.com', rotulo: 'Auditor — Alberto (só leitura)' },
-  { email: 'admin@exemplo.com', rotulo: 'Administrador' },
-];
+// A demonstração entra com a conta de teste, que troca de perfil em "Ver como"
+export const CONTA_DE_TESTE = 'teste@exemplo.com';
 
 // Monta um retrato realista: em vez de dados soltos, percorre o fluxo de
 // verdade com cada perfil, ao longo de duas semanas de "tempo".
@@ -1021,7 +1046,7 @@ export function recomecar() {
   const incorporadora = org('RSF Incorporadora', 'INCORPORADORA');
   const central = org('RSF Central de Relacionamento', 'CENTRAL_RELACIONAMENTO');
   const pessoa = (nome: string, email: string, perfil: Perfil, organizacaoId: string | null) => {
-    const x = { id: novoId('us'), nome, email, perfil, organizacaoId, cpf: null, ativo: true };
+    const x: Reg = { id: novoId('us'), nome, email, perfil, organizacaoId, cpf: null, ativo: true, contaTeste: false };
     db.usuarios.push(x);
     return { sub: x.id, nome, email, perfil, organizacaoId, organizacaoNome: orgNome(organizacaoId) } as Usuario;
   };
@@ -1031,6 +1056,8 @@ export function recomecar() {
   const renata = pessoa('Renata Relacionamento', 'relacionamento@exemplo.com', 'RELACIONAMENTO', central.id);
   pessoa('Alberto Auditor', 'auditor@exemplo.com', 'AUDITOR', null);
   pessoa('Administrador', 'admin@exemplo.com', 'ADMINISTRADOR', null);
+  pessoa('Conta de Teste', CONTA_DE_TESTE, 'AUDITOR', null);
+  db.usuarios[db.usuarios.length - 1].contaTeste = true;
 
   for (const etapa of ORDEM) {
     let ordem = 0;

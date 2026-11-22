@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { Limite, LimiteGuard } from './limite.guard';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { Perfil } from '@prisma/client';
+import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { Contexto, Ctx, Origem } from '../comum/contexto';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards';
@@ -28,6 +29,16 @@ class TrocarSenhaDto {
   novaSenha: string;
 }
 
+class VerComoDto {
+  @IsEnum(Perfil)
+  perfil: Perfil;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  organizacaoId?: string | null;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private auth: AuthService) {}
@@ -50,6 +61,20 @@ export class AuthController {
   @Limite(10, 300)
   trocarSenha(@Body() dto: TrocarSenhaDto, @Ctx() ctx: Contexto) {
     return this.auth.trocarSenha(ctx, dto.senhaAtual, dto.novaSenha);
+  }
+
+  @Get('perfis-de-teste')
+  @UseGuards(JwtAuthGuard)
+  perfisDeTeste(@Ctx() ctx: Contexto) {
+    return this.auth.perfisDeTeste(ctx);
+  }
+
+  // Conta de teste: troca o perfil com que ela vê (e opera) o sistema
+  @Post('ver-como')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  verComo(@Body() dto: VerComoDto, @Ctx() ctx: Contexto) {
+    return this.auth.verComo(ctx, dto.perfil, dto.organizacaoId ?? null);
   }
 
   @Get('me')

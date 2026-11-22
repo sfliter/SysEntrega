@@ -63,6 +63,8 @@ class UsuarioDto {
   // Obrigatória ao criar; ao editar, só quando for para trocar
   @IsOptional() @IsString() @MinLength(8, { message: 'A senha precisa de ao menos 8 caracteres' }) @MaxLength(200) senha?: string;
   @IsOptional() @IsBoolean() ativo?: boolean;
+  // Pode ver o sistema como qualquer perfil (só com CONTAS_DE_TESTE=1)
+  @IsOptional() @IsBoolean() contaTeste?: boolean;
 }
 
 class ModeloItemDto {
@@ -85,6 +87,7 @@ const USUARIO_PUBLICO = {
   perfil: true,
   organizacaoId: true,
   ativo: true,
+  contaTeste: true,
   criadoEm: true,
   organizacao: { select: { nome: true } },
 } as const;
@@ -327,6 +330,7 @@ export class CadastrosController {
       perfil: dto.perfil,
       organizacaoId: dto.organizacaoId || null,
       ativo: dto.ativo ?? true,
+      contaTeste: dto.contaTeste ?? false,
     };
   }
 

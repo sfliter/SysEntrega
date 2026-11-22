@@ -48,6 +48,21 @@ async function main() {
     criouUsuarios = true;
   }
 
+  // Conta de teste: um login só, que vê o sistema como qualquer perfil
+  // ("Ver como"). Perfil de base somente leitura; a troca só funciona com
+  // CONTAS_DE_TESTE=1 no servidor.
+  const testeEmail = (process.env.SEED_TESTE_EMAIL || 'teste@sysentrega.local').toLowerCase();
+  if (
+    (process.env.SEED_CONTA_TESTE === '1' || process.env.SEED_DEMO === '1') &&
+    !(await prisma.usuario.findUnique({ where: { email: testeEmail } }))
+  ) {
+    await prisma.usuario.create({
+      data: { nome: 'Conta de Teste', email: testeEmail, senhaHash, perfil: Perfil.AUDITOR, contaTeste: true },
+    });
+    criouUsuarios = true;
+    console.log(`Seed: conta de teste criada (${testeEmail})`);
+  }
+
   for (const etapa of Object.keys(PAUTA) as Etapa[]) {
     if ((await prisma.modeloItem.count({ where: { etapa } })) > 0) continue;
     let ordem = 0;

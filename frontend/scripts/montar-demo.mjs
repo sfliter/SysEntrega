@@ -17,7 +17,6 @@ const js = ler('.js').replace(/<\/script/gi, '<\\/script');
 if (/url\((?!["']?data:)/.test(css)) throw new Error('O CSS da demonstração referencia arquivo externo');
 
 const pagina = `<title>SysEntrega Demonstração</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 ${css}
 </style>
