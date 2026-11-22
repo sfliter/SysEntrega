@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+# Fotos de vistoria e termos em PDF (em produção ficam num volume do Docker)
+armazenamento/
+armazenamento-teste/

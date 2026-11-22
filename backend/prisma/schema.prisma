@@ -1,0 +1,406 @@
+// RSF - SysEntrega — modelo de dados
+//
+// A unidade percorre três etapas de transferência:
+//   1. Construtora   -> Incorporadora            (vistoria técnica + aceite)
+//   2. Incorporadora -> Central de Relacionamento (conferência + aceite)
+//   3. Relacionamento -> Cliente final            (vistoria com o cliente + entrega)
+//
+// O estado da unidade é o par (etapa, status). As regras de cada etapa ficam
+// em src/comum/fluxo.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Perfil {
+  ADMINISTRADOR
+  CONSTRUTORA
+  INCORPORADORA
+  RELACIONAMENTO
+  AUDITOR // somente leitura, com acesso à trilha de auditoria
+}
+
+enum TipoOrganizacao {
+  CONSTRUTORA
+  INCORPORADORA
+  CENTRAL_RELACIONAMENTO
+}
+
+enum Etapa {
+  CONSTRUTORA_INCORPORADORA
+  INCORPORADORA_RELACIONAMENTO
+  RELACIONAMENTO_CLIENTE
+}
+
+enum StatusUnidade {
+  AGUARDANDO_LIBERACAO // com quem entrega: ainda não foi liberada para a etapa
+  AGUARDANDO_AGENDAMENTO // liberada, falta combinar a data da vistoria
+  VISTORIA_AGENDADA
+  AGUARDANDO_CONFERENCIA // etapa sem agendamento: quem recebe confere
+  EM_VISTORIA
+  COM_PENDENCIAS // vistoria reprovada ou assinatura recusada
+  AGUARDANDO_ASSINATURA // termo gerado, faltam assinaturas
+  ENTREGUE // chaves com o cliente: fim do fluxo
+}
+
+enum StatusAgendamento {
+  PROPOSTO // horários oferecidos, aguardando a outra parte escolher
+  CONFIRMADO
+  CANCELADO
+  REALIZADO
+}
+
+enum StatusVistoria {
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum ResultadoVistoria {
+  APROVADA
+  APROVADA_COM_RESSALVAS
+  REPROVADA
+}
+
+enum ResultadoItem {
+  CONFORME
+  RESSALVA
+  NAO_CONFORME
+  NAO_SE_APLICA
+}
+
+enum StatusPendencia {
+  ABERTA
+  RESOLVIDA
+}
+
+enum TipoDocumento {
+  TERMO_RECEBIMENTO // construtora -> incorporadora
+  TERMO_REPASSE // incorporadora -> relacionamento
+  TERMO_ENTREGA // relacionamento -> cliente
+}
+
+enum ProvedorAssinatura {
+  INTERNO
+  RSF_SIGNER
+}
+
+enum StatusEnvelope {
+  PENDENTE
+  CONCLUIDO
+  RECUSADO
+  CANCELADO
+}
+
+enum ParteSignataria {
+  CONSTRUTORA
+  INCORPORADORA
+  RELACIONAMENTO
+  CLIENTE
+}
+
+enum StatusSignatario {
+  PENDENTE
+  ASSINADO
+  RECUSADO
+}
+
+enum MetodoAssinatura {
+  SESSAO_AUTENTICADA // usuário logado, com a senha conferida no ato
+  CODIGO_USO_UNICO // código enviado ao canal do titular
+  RSF_SIGNER // colhida pelo rsf-signer
+}
+
+enum TipoAtor {
+  USUARIO
+  CLIENTE
+  SISTEMA
+  INTEGRACAO
+}
+
+model Organizacao {
+  id        String          @id @default(cuid())
+  nome      String
+  cnpj      String?
+  tipo      TipoOrganizacao
+  ativo     Boolean         @default(true)
+  criadoEm  DateTime        @default(now())
+  usuarios  Usuario[]
+  obras     Empreendimento[] @relation("construtora")
+  incorporacoes Empreendimento[] @relation("incorporadora")
+}
+
+model Usuario {
+  id            String       @id @default(cuid())
+  nome          String
+  email         String       @unique
+  cpf           String?
+  senhaHash     String
+  perfil        Perfil
+  organizacaoId String?
+  organizacao   Organizacao? @relation(fields: [organizacaoId], references: [id])
+  ativo         Boolean      @default(true)
+  criadoEm      DateTime     @default(now())
+}
+
+model Empreendimento {
+  id              String       @id @default(cuid())
+  codigo          String       @unique
+  nome            String
+  endereco        String?
+  construtoraId   String
+  construtora     Organizacao  @relation("construtora", fields: [construtoraId], references: [id])
+  incorporadoraId String?
+  incorporadora   Organizacao? @relation("incorporadora", fields: [incorporadoraId], references: [id])
+  ativo           Boolean      @default(true)
+  criadoEm        DateTime     @default(now())
+  unidades        Unidade[]
+}
+
+model Cliente {
+  id        String    @id @default(cuid())
+  nome      String
+  cpfCnpj   String    @unique
+  email     String?
+  telefone  String?
+  criadoEm  DateTime  @default(now())
+  unidades  Unidade[]
+}
+
+model Unidade {
+  id               String         @id @default(cuid())
+  empreendimentoId String
+  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id])
+  bloco            String         @default("")
+  numero           String
+  andar            String?
+  tipologia        String?
+  clienteId        String?
+  cliente          Cliente?       @relation(fields: [clienteId], references: [id])
+  etapa            Etapa          @default(CONSTRUTORA_INCORPORADORA)
+  status           StatusUnidade  @default(AGUARDANDO_LIBERACAO)
+  // Quem liberou a unidade para a etapa em curso: assina pela parte que entrega
+  liberadaPorId    String?
+  criadoEm         DateTime       @default(now())
+  atualizadoEm     DateTime       @updatedAt
+  agendamentos     Agendamento[]
+  vistorias        Vistoria[]
+  pendencias       Pendencia[]
+  documentos       Documento[]
+
+  @@unique([empreendimentoId, bloco, numero])
+  @@index([etapa, status])
+}
+
+model Agendamento {
+  id                 String            @id @default(cuid())
+  unidadeId          String
+  unidade            Unidade           @relation(fields: [unidadeId], references: [id])
+  etapa              Etapa
+  status             StatusAgendamento @default(PROPOSTO)
+  dataHora           DateTime? // preenchido na confirmação
+  local              String?
+  observacao         String?
+  propostoPorId      String
+  propostoPorPerfil  Perfil
+  confirmadoPorId    String?
+  confirmadoPeloCliente Boolean        @default(false)
+  confirmadoEm       DateTime?
+  motivoCancelamento String?
+  canceladoEm        DateTime?
+  // Etapa com o cliente: link público para ele escolher o horário
+  tokenCliente       String?           @unique
+  criadoEm           DateTime          @default(now())
+  opcoes             OpcaoHorario[]
+  vistorias          Vistoria[]
+
+  @@index([status, dataHora])
+}
+
+model OpcaoHorario {
+  id            String      @id @default(cuid())
+  agendamentoId String
+  agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+  inicio        DateTime
+  escolhida     Boolean     @default(false)
+}
+
+// Pauta de vistoria de cada etapa. É copiada para a vistoria no início, então
+// mudar a pauta não altera vistorias já feitas.
+model ModeloItem {
+  id        String  @id @default(cuid())
+  etapa     Etapa
+  ambiente  String
+  descricao String
+  ordem     Int     @default(0)
+  ativo     Boolean @default(true)
+
+  @@index([etapa, ordem])
+}
+
+model Vistoria {
+  id            String             @id @default(cuid())
+  unidadeId     String
+  unidade       Unidade            @relation(fields: [unidadeId], references: [id])
+  etapa         Etapa
+  agendamentoId String?
+  agendamento   Agendamento?       @relation(fields: [agendamentoId], references: [id])
+  status        StatusVistoria     @default(EM_ANDAMENTO)
+  resultado     ResultadoVistoria?
+  vistoriadorId String
+  vistoriadorNome String
+  acompanhante  String? // quem acompanhou pela outra parte
+  observacoes   String?
+  iniciadaEm    DateTime           @default(now())
+  concluidaEm   DateTime?
+  itens         VistoriaItem[]
+  pendencias    Pendencia[]
+  documentos    Documento[]
+}
+
+model VistoriaItem {
+  id         String         @id @default(cuid())
+  vistoriaId String
+  vistoria   Vistoria       @relation(fields: [vistoriaId], references: [id], onDelete: Cascade)
+  ambiente   String
+  descricao  String
+  ordem      Int
+  resultado  ResultadoItem?
+  observacao String?
+  fotos      Foto[]
+  pendencias Pendencia[]
+}
+
+model Foto {
+  id             String       @id @default(cuid())
+  vistoriaItemId String
+  vistoriaItem   VistoriaItem @relation(fields: [vistoriaItemId], references: [id], onDelete: Cascade)
+  arquivo        String // chave no armazenamento
+  nomeOriginal   String
+  mime           String
+  tamanho        Int
+  sha256         String
+  enviadaPorId   String
+  criadoEm       DateTime     @default(now())
+}
+
+model Pendencia {
+  id             String          @id @default(cuid())
+  unidadeId      String
+  unidade        Unidade         @relation(fields: [unidadeId], references: [id])
+  etapa          Etapa
+  vistoriaId     String?
+  vistoria       Vistoria?       @relation(fields: [vistoriaId], references: [id])
+  vistoriaItemId String?
+  vistoriaItem   VistoriaItem?   @relation(fields: [vistoriaItemId], references: [id])
+  descricao      String
+  status         StatusPendencia @default(ABERTA)
+  resolucao      String?
+  resolvidaPorId String?
+  resolvidaPorNome String?
+  resolvidaEm    DateTime?
+  criadoEm       DateTime        @default(now())
+}
+
+model Documento {
+  id              String        @id @default(cuid())
+  unidadeId       String
+  unidade         Unidade       @relation(fields: [unidadeId], references: [id])
+  etapa           Etapa
+  vistoriaId      String?
+  vistoria        Vistoria?     @relation(fields: [vistoriaId], references: [id])
+  tipo            TipoDocumento
+  protocolo       String        @unique
+  titulo          String
+  // Retrato dos dados no momento da emissão: é o que o PDF mostra
+  conteudo        Json
+  arquivo         String // PDF emitido (chave no armazenamento)
+  sha256          String // hash do PDF emitido: é o que as partes assinam
+  tamanho         Int
+  arquivoAssinado String? // PDF com a página de assinaturas
+  sha256Assinado  String?
+  criadoEm        DateTime      @default(now())
+  envelope        Envelope?
+}
+
+model Envelope {
+  id          String             @id @default(cuid())
+  documentoId String             @unique
+  documento   Documento          @relation(fields: [documentoId], references: [id])
+  provedor    ProvedorAssinatura @default(INTERNO)
+  idExterno   String? // id do envelope no rsf-signer
+  status      StatusEnvelope     @default(PENDENTE)
+  criadoEm    DateTime           @default(now())
+  concluidoEm DateTime?
+  signatarios Signatario[]
+
+  @@index([provedor, idExterno])
+}
+
+model Signatario {
+  id               String            @id @default(cuid())
+  envelopeId       String
+  envelope         Envelope          @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
+  parte            ParteSignataria
+  ordem            Int
+  // Preenchidos na emissão com quem se espera que assine; a assinatura grava
+  // quem assinou de fato.
+  nome             String
+  cpf              String?
+  email            String?
+  usuarioId        String?
+  clienteId        String?
+  status           StatusSignatario  @default(PENDENTE)
+  metodo           MetodoAssinatura?
+  assinadoEm       DateTime?
+  ip               String?
+  userAgent        String?
+  localizacao      String?
+  assinaturaImagem String? // rubrica desenhada na tela (data URL PNG)
+  motivoRecusa     String?
+  // Link público do signatário sem login (cliente)
+  token            String?           @unique
+  codigoHash       String?
+  codigoExpiraEm   DateTime?
+  codigoTentativas Int               @default(0)
+  codigoEnviadoEm  DateTime?
+  codigoCanal      String?
+  // rsf-signer
+  idExterno        String?
+  urlAssinatura    String?
+}
+
+// Trilha de auditoria: só recebe inserções (um gatilho no banco recusa UPDATE,
+// DELETE e TRUNCATE) e cada evento carrega o hash do anterior. Sem chaves
+// estrangeiras de propósito — nada do resto do sistema pode alterá-la.
+model EventoAuditoria {
+  seq            Int      @id @default(autoincrement())
+  criadoEm       DateTime
+  acao           String
+  descricao      String
+  entidade       String
+  entidadeId     String?
+  unidadeId      String?
+  etapa          Etapa?
+  atorTipo       TipoAtor
+  atorId         String?
+  atorNome       String
+  atorPerfil     String?
+  organizacao    String?
+  ip             String?
+  userAgent      String?
+  statusAnterior String?
+  statusNovo     String?
+  dados          Json?
+  hashAnterior   String
+  hash           String
+
+  @@index([unidadeId, seq])
+  @@index([acao])
+  @@index([criadoEm])
+}
