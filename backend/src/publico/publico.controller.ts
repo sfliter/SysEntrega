@@ -7,12 +7,14 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import type { Response } from 'express';
 import { AgendamentosService } from '../agendamentos/agendamentos.service';
 import { enviarPdf, MotivoBody } from '../assinaturas/assinaturas.controller';
 import { AssinaturasService } from '../assinaturas/assinaturas.service';
+import { Limite, LimiteGuard } from '../auth/limite.guard';
 import { Origem } from '../comum/contexto';
 
 type OrigemReq = { ip: string | null; userAgent: string | null };
@@ -32,7 +34,10 @@ class AssinarPublicoBody {
 // Rotas sem login. O cliente final não tem usuário: ele chega por um link
 // com token de uso restrito (um por agendamento, um por assinatura). O token
 // tem 256 bits aleatórios; a assinatura ainda exige o código de uso único.
+// Além disso, cada IP faz no máximo 60 chamadas por minuto a estas rotas.
 @Controller('publico')
+@UseGuards(LimiteGuard)
+@Limite(60, 60)
 export class PublicoController {
   constructor(
     private agendamentos: AgendamentosService,

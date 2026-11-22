@@ -126,7 +126,8 @@ export const ROTULO_PARTE: Record<ParteSignataria, string> = {
 };
 
 export function rotuloEstado(etapa: Etapa, status: StatusUnidade): string {
-  return `${ETAPAS[etapa].ordem}. ${ETAPAS[etapa].rotulo} · ${ROTULO_STATUS[status]}`;
+  if (status === StatusUnidade.ENTREGUE) return ROTULO_STATUS[status];
+  return `Etapa ${ETAPAS[etapa].ordem} · ${ROTULO_STATUS[status]}`;
 }
 
 // A construtora só enxerga a etapa em que participa: agendamentos, vistorias,

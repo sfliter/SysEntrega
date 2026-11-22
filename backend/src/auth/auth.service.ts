@@ -1,9 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TipoAtor } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { UsuarioLogado } from '../comum/contexto';
+import { Contexto, UsuarioLogado } from '../comum/contexto';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Hash de mentira para gastar o mesmo tempo quando o e-mail não existe —
@@ -65,6 +65,25 @@ export class AuthService {
       },
     });
     return { accessToken: await this.jwt.signAsync(payload), usuario: payload };
+  }
+
+  async trocarSenha(ctx: Contexto, senhaAtual: string, novaSenha: string) {
+    const confere = await this.conferirSenha(ctx.usuario.sub, senhaAtual);
+    await this.auditoria.registrar({
+      acao: confere ? 'SENHA_ALTERADA' : 'SENHA_ALTERACAO_RECUSADA',
+      descricao: confere
+        ? `${ctx.usuario.nome} alterou a própria senha`
+        : `Senha atual incorreta na tentativa de troca de senha de ${ctx.usuario.nome}`,
+      entidade: 'Usuario',
+      entidadeId: ctx.usuario.sub,
+      ator: ctx.ator,
+    });
+    if (!confere) throw new ForbiddenException('Senha atual incorreta');
+    await this.prisma.usuario.update({
+      where: { id: ctx.usuario.sub },
+      data: { senhaHash: await bcrypt.hash(novaSenha, 10) },
+    });
+    return { ok: true };
   }
 
   // Confere a senha do usuário logado — pedido de novo no ato de assinar

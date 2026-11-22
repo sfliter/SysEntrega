@@ -15,6 +15,7 @@ import { AuditoriaService } from './auditoria/auditoria.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
+import { LimiteGuard } from './auth/limite.guard';
 import { CadastrosController } from './cadastros/cadastros.controller';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { TermoPdfService } from './documentos/termo-pdf.service';
@@ -63,6 +64,7 @@ function segredoJwt(): string {
     AuthService,
     JwtAuthGuard,
     RolesGuard,
+    LimiteGuard,
     UnidadesService,
     AgendamentosService,
     ArmazenamentoService,

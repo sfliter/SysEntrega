@@ -391,6 +391,39 @@ async function fluxoCompleto(prisma) {
     assert.equal(d.documentos[0].envelope.status, 'RECUSADO');
     assert.match(d.pendencias[0].descricao, /Metragem divergente/);
     ok('recusa de assinatura encerra o termo e devolve a unidade com pendência');
+
+    // Sessão: desativar o usuário derruba o acesso na hora, sem esperar o token vencer
+    const email = `temp${Date.now()}@exemplo.com`;
+    const temp = await exigir(201, 'POST', '/usuarios', {
+      token: admin, corpo: { nome: 'Usuário Temporário', email, perfil: 'INCORPORADORA', senha: SENHA },
+    });
+    assert.equal('senhaHash' in temp, false);
+    const tokenTemp = await entrar(email);
+    await exigir(200, 'GET', '/unidades', { token: tokenTemp });
+    await exigir(200, 'PATCH', `/usuarios/${temp.id}`, {
+      token: admin, corpo: { nome: 'Usuário Temporário', email, perfil: 'AUDITOR', ativo: true },
+    });
+    await exigir(403, 'POST', '/unidades', { token: tokenTemp, corpo: { empreendimentoId: emp.id, numeros: ['X1'] } });
+    await exigir(200, 'PATCH', `/usuarios/${temp.id}`, {
+      token: admin, corpo: { nome: 'Usuário Temporário', email, perfil: 'AUDITOR', ativo: false },
+    });
+    await exigir(401, 'GET', '/unidades', { token: tokenTemp });
+    await exigir(401, 'POST', '/auth/login', { corpo: { email, senha: SENHA } });
+    ok('mudança de perfil e desativação de usuário valem na hora, mesmo com o token ainda válido');
+
+    await exigir(403, 'POST', '/auth/trocar-senha', { token: outra, corpo: { senhaAtual: 'errada', novaSenha: 'NovaSenha#2026' } });
+    await exigir(400, 'POST', '/auth/trocar-senha', { token: outra, corpo: { senhaAtual: SENHA, novaSenha: 'curta' } });
+    await exigir(200, 'POST', '/auth/trocar-senha', { token: outra, corpo: { senhaAtual: SENHA, novaSenha: 'NovaSenha#2026' } });
+    await exigir(401, 'POST', '/auth/login', { corpo: { email: 'outra.construtora@exemplo.com', senha: SENHA } });
+    await exigir(200, 'POST', '/auth/login', { corpo: { email: 'outra.construtora@exemplo.com', senha: 'NovaSenha#2026' } });
+    await exigir(200, 'POST', '/auth/trocar-senha', { token: outra, corpo: { senhaAtual: 'NovaSenha#2026', novaSenha: SENHA } });
+    ok('usuário troca a própria senha, conferindo a atual');
+
+    const alvoForca = `forca${Date.now()}@exemplo.com`;
+    for (let i = 0; i < 10; i++) await exigir(401, 'POST', '/auth/login', { corpo: { email: alvoForca, senha: 'x' } });
+    await exigir(429, 'POST', '/auth/login', { corpo: { email: alvoForca, senha: 'x' } });
+    await exigir(200, 'POST', '/auth/login', { corpo: { email: 'auditor@exemplo.com', senha: SENHA } });
+    ok('login bloqueia após 10 tentativas por e-mail, sem travar os demais usuários');
   } finally {
     await api.parar();
   }

@@ -33,6 +33,13 @@ function limpo(texto: string | null | undefined): string {
     .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF–—•…]/g, '?');
 }
 
+function cpfCnpj(v: string | null): string | null {
+  const d = (v ?? '').replace(/\D/g, '');
+  if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  return v;
+}
+
 function quando(iso: string | null | undefined): string {
   return iso ? dataHoraBR(new Date(iso)) : '—';
 }
@@ -115,7 +122,7 @@ export class TermoPdfService {
 
     const parte = (p: ParteTermo): [string, string | null][] => [
       [p.parte, p.nome],
-      [p.documento && p.documento.replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ', p.documento],
+      [p.documento && p.documento.replace(/\D/g, '').length === 11 ? 'CPF' : 'CNPJ', cpfCnpj(p.documento)],
       ...(p.representante ? ([['Representante', p.representante]] as [string, string][]) : []),
     ];
 
@@ -263,7 +270,7 @@ export class TermoPdfService {
         }
         const linhas: [string, string | null][] = [
           ['Nome', a.nome],
-          ['CPF', a.cpf],
+          ['CPF', cpfCnpj(a.cpf)],
           ['Assinado em', quando(a.assinadoEm)],
           ['Método', ROTULO_METODO[a.metodo] ?? a.metodo],
           ['IP', a.ip],

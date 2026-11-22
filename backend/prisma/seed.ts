@@ -5,6 +5,7 @@
 // empreendimento com unidades e um cliente — para homologação e treinamento.
 import { Etapa, Perfil, PrismaClient, TipoOrganizacao } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -33,15 +34,19 @@ const PAUTA: Record<Etapa, [string, string[]][]> = {
 };
 
 async function main() {
-  const senhaPadrao = process.env.SEED_SENHA_PADRAO || 'Mudar@123';
+  // Sem senha definida, sorteia uma: nenhuma instalação sobe com senha conhecida
+  const senhaDefinida = process.env.SEED_SENHA_PADRAO;
+  const senhaPadrao = senhaDefinida || randomBytes(12).toString('base64url');
   const senhaHash = await bcrypt.hash(senhaPadrao, 10);
+  let criouUsuarios = false;
 
   const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@sysentrega.local').toLowerCase();
-  await prisma.usuario.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: { nome: 'Administrador', email: adminEmail, senhaHash, perfil: Perfil.ADMINISTRADOR },
-  });
+  if (!(await prisma.usuario.findUnique({ where: { email: adminEmail } }))) {
+    await prisma.usuario.create({
+      data: { nome: 'Administrador', email: adminEmail, senhaHash, perfil: Perfil.ADMINISTRADOR },
+    });
+    criouUsuarios = true;
+  }
 
   for (const etapa of Object.keys(PAUTA) as Etapa[]) {
     if ((await prisma.modeloItem.count({ where: { etapa } })) > 0) continue;
@@ -67,6 +72,7 @@ async function main() {
       data: { nome: 'RSF Central de Relacionamento', tipo: TipoOrganizacao.CENTRAL_RELACIONAMENTO },
     });
 
+    criouUsuarios = true;
     const usuarios: [string, string, Perfil, string | null][] = [
       ['Carlos Construtor', 'construtora@exemplo.com', Perfil.CONSTRUTORA, construtora.id],
       ['Olívia Outra', 'outra.construtora@exemplo.com', Perfil.CONSTRUTORA, outraConstrutora.id],
@@ -110,6 +116,9 @@ async function main() {
     console.log('Seed: dados de demonstração criados');
   }
   console.log(`Seed concluído. Administrador: ${adminEmail}`);
+  if (criouUsuarios && !senhaDefinida) {
+    console.log(`SENHA INICIAL (anote e troque no primeiro acesso; não será mostrada de novo): ${senhaPadrao}`);
+  }
 }
 
 main()
