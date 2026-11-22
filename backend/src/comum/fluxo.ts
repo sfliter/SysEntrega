@@ -118,6 +118,33 @@ export const ROTULO_STATUS: Record<StatusUnidade, string> = {
   ENTREGUE: 'Entregue ao cliente',
 };
 
+// Depois que a unidade é recebida e o termo da vistoria é aceito pelas duas
+// partes, a construtora deixa de acompanhar o que acontece com ela: para a
+// construtora a unidade passa a aparecer apenas como "recebida".
+export const RECEBIDA_INCORPORADORA = 'RECEBIDA_INCORPORADORA';
+export type StatusVisivel = StatusUnidade | typeof RECEBIDA_INCORPORADORA;
+export const ROTULO_STATUS_VISIVEL: Record<StatusVisivel, string> = {
+  ...ROTULO_STATUS,
+  RECEBIDA_INCORPORADORA: 'Recebida pela incorporadora',
+};
+
+// A situação da unidade como o perfil pode vê-la
+export function situacaoVisivel(
+  perfil: Perfil,
+  un: { etapa: Etapa; status: StatusUnidade; atualizadoEm: Date },
+): { etapa: Etapa; status: StatusVisivel; atualizadoEm: Date | null; encerradaParaPerfil: boolean } {
+  if (perfil === Perfil.CONSTRUTORA && un.etapa !== Etapa.CONSTRUTORA_INCORPORADORA) {
+    return {
+      etapa: Etapa.CONSTRUTORA_INCORPORADORA,
+      status: RECEBIDA_INCORPORADORA,
+      // a data da última mudança revelaria a atividade das etapas seguintes
+      atualizadoEm: null,
+      encerradaParaPerfil: true,
+    };
+  }
+  return { etapa: un.etapa, status: un.status, atualizadoEm: un.atualizadoEm, encerradaParaPerfil: false };
+}
+
 export const ROTULO_PARTE: Record<ParteSignataria, string> = {
   CONSTRUTORA: 'Construtora',
   INCORPORADORA: 'Incorporadora',

@@ -15,6 +15,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -23,7 +24,7 @@ import {
 } from 'class-validator';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Contexto, Ctx } from '../comum/contexto';
-import { ETAPAS, ROTULO_STATUS } from '../comum/fluxo';
+import { ETAPAS, RECEBIDA_INCORPORADORA, ROTULO_STATUS_VISIVEL } from '../comum/fluxo';
 import { UnidadesService } from './unidades.service';
 
 class CriarUnidadesDto {
@@ -74,7 +75,10 @@ class AtualizarUnidadeDto {
 class FiltroUnidadesDto {
   @IsOptional() @IsString() empreendimentoId?: string;
   @IsOptional() @IsEnum(Etapa) etapa?: Etapa;
-  @IsOptional() @IsEnum(StatusUnidade) status?: StatusUnidade;
+  @IsOptional()
+  @IsIn([...Object.values(StatusUnidade), RECEBIDA_INCORPORADORA])
+  status?: StatusUnidade | typeof RECEBIDA_INCORPORADORA;
+
   @IsOptional() @IsString() @MaxLength(80) busca?: string;
 }
 
@@ -123,8 +127,8 @@ export class UnidadesController {
     const linhas = unidades.map((u) =>
       [
         u.empreendimento.codigo, u.empreendimento.nome, u.bloco, u.numero, u.andar, u.tipologia,
-        ETAPAS[u.etapa].ordem, ETAPAS[u.etapa].rotulo, ROTULO_STATUS[u.status],
-        u.cliente?.nome, u.pendenciasAbertas, u.atualizadoEm.toISOString(),
+        ETAPAS[u.etapa].ordem, ETAPAS[u.etapa].rotulo, ROTULO_STATUS_VISIVEL[u.status],
+        u.cliente?.nome, u.pendenciasAbertas, u.atualizadoEm?.toISOString() ?? '',
       ]
         .map(celula)
         .join(';'),

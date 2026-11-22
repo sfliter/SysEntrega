@@ -18,7 +18,9 @@ export type StatusUnidade =
   | 'EM_VISTORIA'
   | 'COM_PENDENCIAS'
   | 'AGUARDANDO_ASSINATURA'
-  | 'ENTREGUE';
+  | 'ENTREGUE'
+  // Só para a construtora: a unidade já foi recebida e ela não acompanha mais
+  | 'RECEBIDA_INCORPORADORA';
 
 export type ResultadoItem = 'CONFORME' | 'RESSALVA' | 'NAO_CONFORME' | 'NAO_SE_APLICA';
 
@@ -42,7 +44,8 @@ export interface UnidadeResumo {
   tipologia: string | null;
   etapa: Etapa;
   status: StatusUnidade;
-  atualizadoEm: string;
+  atualizadoEm: string | null;
+  encerradaParaPerfil?: boolean;
   empreendimento: { id: string; nome: string; codigo: string };
   cliente: { id: string; nome: string } | null;
   pendenciasAbertas: number;

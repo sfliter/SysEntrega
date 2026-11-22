@@ -19,7 +19,9 @@ import { Ator, Contexto, UsuarioLogado } from '../comum/contexto';
 import {
   ETAPAS,
   etapasVisiveis,
+  RECEBIDA_INCORPORADORA,
   rotuloEstado,
+  situacaoVisivel,
   statusAposLiberacao,
   statusDeEntrada,
 } from '../comum/fluxo';
@@ -153,16 +155,30 @@ export class UnidadesService {
     f: {
       empreendimentoId?: string;
       etapa?: Etapa;
-      status?: StatusUnidade;
+      status?: StatusUnidade | typeof RECEBIDA_INCORPORADORA;
       busca?: string;
     },
   ) {
     const where: Prisma.UnidadeWhereInput = {
       ...this.escopo(u),
       empreendimentoId: f.empreendimentoId,
-      etapa: f.etapa,
-      status: f.status,
     };
+    const depoisDaPrimeira = { not: Etapa.CONSTRUTORA_INCORPORADORA };
+    if (f.status === RECEBIDA_INCORPORADORA) {
+      // "já recebidas": tudo o que passou da primeira etapa
+      if (f.etapa === Etapa.CONSTRUTORA_INCORPORADORA) return [];
+      where.etapa = f.etapa ?? depoisDaPrimeira;
+    } else {
+      where.etapa = f.etapa;
+      where.status = f.status;
+    }
+    if (u.perfil === Perfil.CONSTRUTORA) {
+      // A construtora só filtra pelo que pode ver: a situação das etapas
+      // seguintes não pode ser descoberta pelos filtros.
+      if (f.etapa && f.etapa !== Etapa.CONSTRUTORA_INCORPORADORA) return [];
+      if (f.status === RECEBIDA_INCORPORADORA) where.etapa = depoisDaPrimeira;
+      else if (f.status || f.etapa) where.etapa = Etapa.CONSTRUTORA_INCORPORADORA;
+    }
     if (f.busca) {
       const busca = f.busca.trim();
       where.OR = [
@@ -179,7 +195,11 @@ export class UnidadesService {
         empreendimento: { select: { id: true, nome: true, codigo: true } },
         cliente: { select: { id: true, nome: true } },
         _count: {
-          select: { pendencias: { where: { status: StatusPendencia.ABERTA } } },
+          select: {
+            pendencias: {
+              where: { status: StatusPendencia.ABERTA, etapa: { in: etapasVisiveis(u.perfil) } },
+            },
+          },
         },
       },
       orderBy: [
@@ -187,10 +207,11 @@ export class UnidadesService {
         { bloco: 'asc' },
         { numero: 'asc' },
       ],
-      take: 2000,
+      take: 5000,
     });
     return unidades.map((un) => ({
       ...un,
+      ...situacaoVisivel(u.perfil, un),
       cliente: u.perfil === Perfil.CONSTRUTORA ? null : un.cliente,
       pendenciasAbertas: un._count.pendencias,
       _count: undefined,
@@ -226,13 +247,15 @@ export class UnidadesService {
 
     const relacionamento =
       u.perfil === Perfil.RELACIONAMENTO || u.perfil === Perfil.ADMINISTRADOR;
-    const cfg = ETAPAS[unidade.etapa];
+    const visivel = situacaoVisivel(u.perfil, unidade);
+    const cfg = ETAPAS[visivel.etapa];
     return {
       unidade: {
         ...unidade,
+        ...visivel,
         cliente: u.perfil === Perfil.CONSTRUTORA ? null : unidade.cliente,
       },
-      etapa: { ...cfg, chave: unidade.etapa },
+      etapa: { ...cfg, chave: visivel.etapa },
       permissoes: {
         liberar: regras.podeLiberar(u, unidade),
         proporHorarios: regras.podeProporHorarios(u, unidade),

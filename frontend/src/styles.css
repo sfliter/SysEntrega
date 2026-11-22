@@ -746,3 +746,69 @@ a.lista-linha:hover strong { color: var(--azul); }
   .ver-como { flex-direction: row; align-items: center; order: 2; width: 100%; gap: 10px; }
   .ver-como select { flex: 1; min-width: 0; }
 }
+
+/* ---------- dashboard ---------- */
+.ao-vivo { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ok); align-self: flex-start; white-space: nowrap; }
+.ao-vivo .faixa-ponto { animation: pulsar 2s ease-in-out infinite; }
+.ao-vivo-parado { color: var(--atencao); }
+.ao-vivo-parado .faixa-ponto { animation: none; }
+
+.indicadores { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.indicador { display: flex; flex-direction: column; gap: 2px; background: var(--papel); border-radius: var(--raio); padding: 14px 18px; text-decoration: none; color: var(--tinta); min-width: 0; }
+a.indicador:hover { background: #e2e8f1; }
+.indicador strong { font-size: 30px; font-weight: 700; line-height: 1.15; color: var(--marinho); font-variant-numeric: tabular-nums; }
+.indicador .valor-ok { color: var(--ok); }
+.indicador .valor-atencao { color: var(--atencao-forte); }
+.indicador .valor-perigo { color: var(--perigo); }
+
+.secao-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 12px 24px; flex-wrap: wrap; margin: 20px 0 10px; }
+.secao-topo h2 { margin: 0; font-size: 18px; }
+.legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--legenda); }
+.legenda li { display: flex; align-items: center; gap: 6px; }
+.ponto-neutro { background: var(--tinta-3); }
+
+.emp h3 { font-size: 17px; color: var(--marinho); }
+.emp-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.emp-acoes { display: flex; align-items: center; gap: 14px; }
+.avanco { display: flex; height: 10px; border-radius: var(--raio); overflow: hidden; background: var(--regua); gap: 2px; }
+.avanco-etapa { display: block; min-width: 4px; }
+.avanco-1 { background: var(--marinho); }
+.avanco-2 { background: var(--azul); }
+.avanco-3 { background: var(--azul-claro); }
+.avanco-fim { background: var(--ok); }
+.avanco-legenda { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 8px 0 4px; font-size: 13px; color: var(--tinta-2); }
+.avanco-legenda li { display: flex; align-items: center; gap: 7px; }
+.avanco-legenda b { color: var(--tinta); font-variant-numeric: tabular-nums; }
+.quadro { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+.espelho { margin-top: 16px; }
+.espelho > .etiqueta { margin-bottom: 6px; }
+.espelho-andar { display: flex; align-items: flex-start; gap: 10px; padding: 3px 0; }
+.espelho-rotulo { width: 30px; flex-shrink: 0; text-align: right; font-size: 12px; font-weight: 700; color: var(--legenda); padding-top: 12px; font-variant-numeric: tabular-nums; }
+.espelho-unidades { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.unidade-celula {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 84px;
+  min-height: 46px;
+  padding: 5px 9px;
+  border-radius: var(--raio);
+  border-left: 4px solid var(--tinta-3);
+  background: var(--branco);
+  color: var(--tinta);
+  text-decoration: none;
+  line-height: 1.2;
+}
+.unidade-celula strong { font-size: 14px; font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.unidade-celula i { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--legenda); letter-spacing: 0.04em; }
+.unidade-celula span { font-size: 11px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unidade-celula:hover { outline: 2px solid var(--azul); outline-offset: 1px; }
+.celula-atencao { border-left-color: var(--atencao-forte); background: var(--atencao-fundo); }
+.celula-andamento { border-left-color: var(--azul); background: var(--andamento-fundo); }
+.celula-perigo { border-left-color: var(--perigo); background: var(--perigo-fundo); }
+.celula-ok { border-left-color: var(--ok); background: var(--ok-fundo); }
+@media (max-width: 860px) {
+  .espelho-rotulo { width: 22px; }
+  .unidade-celula { width: 76px; }
+}

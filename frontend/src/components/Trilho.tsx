@@ -13,16 +13,20 @@ export default function Trilho({
   compacto?: boolean;
 }) {
   const entregue = status === 'ENTREGUE';
-  const atual = ordemDaEtapa(etapa); // 1..3
+  // Visão da construtora depois da entrega: o caminho para na incorporadora
+  const recebida = status === 'RECEBIDA_INCORPORADORA';
+  const atual = recebida ? 2 : ordemDaEtapa(etapa); // etapa em curso (1..3)
   const descricao = entregue
     ? 'Entregue ao cliente'
-    : `Etapa ${atual} de 3: ${ESTACOES[atual - 1]} para ${ESTACOES[atual]} — ${STATUS[status].rotulo}`;
+    : recebida
+      ? 'Recebida pela incorporadora'
+      : `Etapa ${atual} de 3: ${ESTACOES[atual - 1]} para ${ESTACOES[atual]} — ${STATUS[status].rotulo}`;
   return (
     <div className={`trilho ${compacto ? 'trilho-compacto' : ''}`} role="img" aria-label={descricao}>
       {ESTACOES.map((nome, i) => {
         const alcancada = entregue || i < atual;
         const trechoFeito = entregue || i + 1 < atual;
-        const trechoAtual = !entregue && i + 1 === atual;
+        const trechoAtual = !entregue && !recebida && i + 1 === atual;
         return (
           <div key={nome} className="trilho-parte">
             <div className={`estacao ${alcancada ? 'estacao-feita' : ''}`}>

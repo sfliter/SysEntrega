@@ -13,7 +13,7 @@ export default function Layout() {
   if (!usuario) return null;
   const perfil = usuario.perfil;
   const itens = [
-    { para: '/', rotulo: 'Painel', fim: true },
+    { para: '/', rotulo: 'Dashboard', fim: true },
     { para: '/unidades', rotulo: 'Unidades' },
     { para: '/agenda', rotulo: 'Agenda' },
     ...(perfil !== 'CONSTRUTORA' ? [{ para: '/cadastros', rotulo: 'Cadastros' }] : []),

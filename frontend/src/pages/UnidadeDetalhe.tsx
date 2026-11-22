@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { abrirPdf, api, DEMO, mensagemDeErro } from '../api';
+import { useAoVivo } from '../aoVivo';
 import { Carregando, Erro, Modal, Pill, PillStatus, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import CampoAssinatura, { obterLocalizacao } from '../components/CampoAssinatura';
 import Historico from '../components/Historico';
@@ -41,8 +42,14 @@ export default function UnidadeDetalhe() {
     [id],
   );
 
+  // Outra pessoa agiu na unidade: a tela se atualiza sozinha
+  useAoVivo(async () => {
+    await recarregar();
+    setVersao((v) => v + 1);
+  });
+
   if (carregando && !dados) return <Carregando />;
-  if (erro || !dados) return <Erro>{erro || 'Unidade não encontrada'}</Erro>;
+  if (!dados) return <Erro>{erro || 'Unidade não encontrada'}</Erro>;
 
   const { unidade, permissoes, etapa } = dados;
   const ordem = ordemDaEtapa(unidade.etapa);
@@ -96,7 +103,11 @@ export default function UnidadeDetalhe() {
       {/* ---------- o que acontece agora ---------- */}
       <section className="cartao cartao-destaque">
         <p className="etiqueta">
-          {unidade.status === 'ENTREGUE' ? 'Concluído' : `Etapa ${ordem} de 3 · ${rotuloDaEtapa(unidade.etapa)}`}
+          {unidade.status === 'ENTREGUE'
+            ? 'Concluído'
+            : unidade.status === 'RECEBIDA_INCORPORADORA'
+              ? 'Concluído para a construtora'
+              : `Etapa ${ordem} de 3 · ${rotuloDaEtapa(unidade.etapa)}`}
         </p>
         <Erro>{acao.erro}</Erro>
 
@@ -248,6 +259,13 @@ export default function UnidadeDetalhe() {
           <Passo
             titulo={`Termo ${termoAberto.protocolo} aguardando assinaturas`}
             texto="A etapa só é concluída com a assinatura das duas partes."
+          />
+        )}
+
+        {unidade.status === 'RECEBIDA_INCORPORADORA' && (
+          <Passo
+            titulo="Unidade recebida pela incorporadora"
+            texto="A vistoria foi aceita e o termo, assinado pelas duas partes. A partir daqui a unidade segue com a incorporadora; o termo e o histórico da etapa de recebimento continuam disponíveis abaixo."
           />
         )}
 

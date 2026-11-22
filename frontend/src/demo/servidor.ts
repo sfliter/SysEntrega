@@ -60,6 +60,7 @@ const STATUS: Record<StatusUnidade, string> = {
   AGUARDANDO_LIBERACAO: 'Aguardando liberação', AGUARDANDO_AGENDAMENTO: 'Aguardando agendamento',
   VISTORIA_AGENDADA: 'Vistoria agendada', AGUARDANDO_CONFERENCIA: 'Aguardando conferência', EM_VISTORIA: 'Em vistoria',
   COM_PENDENCIAS: 'Com pendências', AGUARDANDO_ASSINATURA: 'Aguardando assinaturas', ENTREGUE: 'Entregue ao cliente',
+  RECEBIDA_INCORPORADORA: 'Recebida pela incorporadora',
 };
 const PARTE: Record<Parte, string> = {
   CONSTRUTORA: 'Construtora', INCORPORADORA: 'Incorporadora', RELACIONAMENTO: 'Central de Relacionamento', CLIENTE: 'Cliente',
@@ -224,6 +225,15 @@ const regras = {
   cadastrar: (u: Usuario) => tem(u, ['INCORPORADORA']),
   clientes: (u: Usuario) => tem(u, ['INCORPORADORA', 'RELACIONAMENTO']),
 };
+
+// A situação da unidade como o perfil pode vê-la: depois de recebida e
+// aceita, a construtora não acompanha mais a unidade.
+function visao(u: Usuario, un: Reg): { etapa: Etapa; status: StatusUnidade; atualizadoEm: string | null; encerradaParaPerfil: boolean } {
+  if (u.perfil === 'CONSTRUTORA' && un.etapa !== 'CONSTRUTORA_INCORPORADORA') {
+    return { etapa: 'CONSTRUTORA_INCORPORADORA', status: 'RECEBIDA_INCORPORADORA', atualizadoEm: null, encerradaParaPerfil: true };
+  }
+  return { etapa: un.etapa, status: un.status, atualizadoEm: un.atualizadoEm, encerradaParaPerfil: false };
+}
 
 const noEscopo = (u: Usuario, un: Reg) =>
   u.perfil !== 'CONSTRUTORA' || db.emps.find((e) => e.id === un.empreendimentoId)?.construtoraId === u.organizacaoId;
@@ -442,12 +452,16 @@ const rotas: Rota[] = [
   ['GET', /^\/auth\/me$/, ({ u }) => u],
   ['POST', /^\/auth\/trocar-senha$/, () => ({ ok: true })],
 
+  ['GET', /^\/dashboard\/versao$/, () => ({ versao: db.eventos.length })],
   ['GET', /^\/dashboard$/, ({ u }) => {
     const visiveis = etapasVisiveis(u.perfil);
-    const minhas = db.unidades.filter((un) => noEscopo(u, un));
+    const vistas = db.unidades.filter((un) => noEscopo(u, un)).map((un) => ({ un, v: visao(u, un) }));
+    const andando = (l: typeof vistas) => l.filter(({ un, v }) => !v.encerradaParaPerfil && un.status !== 'ENTREGUE');
+    const emAndamento = andando(vistas);
+    const abertas = (un: Reg) => db.pendencias.filter((p) => p.unidadeId === un.id && p.status === 'ABERTA' && visiveis.includes(p.etapa)).length;
     const fila: Reg[] = [];
-    for (const un of minhas) {
-      if (un.status === 'ENTREGUE' || !visiveis.includes(un.etapa)) continue;
+    for (const { un } of emAndamento) {
+      if (!visiveis.includes(un.etapa)) continue;
       const c = ETAPAS[un.etapa as Etapa];
       const base = { unidadeId: un.id, unidade: rotuloUn(un), empreendimento: empDe(un).nome, desde: un.atualizadoEm };
       const proposta = db.agendamentos.find((a) => a.unidadeId === un.id && a.etapa === un.etapa && a.status === 'PROPOSTO');
@@ -461,22 +475,37 @@ const rotas: Rota[] = [
     for (const d of db.documentos) {
       const un = db.unidades.find((x) => x.id === d.unidadeId)!;
       if (d.envelope.status !== 'PENDENTE' || !noEscopo(u, un) || !visiveis.includes(d.etapa)) continue;
-      for (const s of d.envelope.signatarios) {
-        if (s.status === 'PENDENTE' && perfilDaParte(s.parte) === u.perfil) {
+      for (const sg of d.envelope.signatarios) {
+        if (sg.status === 'PENDENTE' && perfilDaParte(sg.parte) === u.perfil) {
           fila.push({ unidadeId: un.id, unidade: rotuloUn(un), empreendimento: empDe(un).nome, acao: `Assinar o termo ${d.protocolo}`, desde: d.criadoEm });
         }
       }
     }
     fila.sort((a, b) => a.desde.localeCompare(b.desde));
-    const emAndamento = minhas.filter((un) => un.status !== 'ENTREGUE');
+    const idsVisiveis = new Set(vistas.map(({ un }) => un.id));
     return {
-      etapas: ORDEM.map((etapa) => {
-        const daEtapa = emAndamento.filter((un) => un.etapa === etapa);
-        const porStatus = [...new Set(daEtapa.map((un) => un.status))].map((status) => ({ status, total: daEtapa.filter((un) => un.status === status).length }));
-        return { etapa, ordem: ETAPAS[etapa].ordem, rotulo: ETAPAS[etapa].rotulo, visivel: visiveis.includes(etapa), total: daEtapa.length, porStatus };
+      versao: db.eventos.length,
+      etapas: ORDEM.filter((e) => visiveis.includes(e)).map((etapa) => {
+        const daEtapa = emAndamento.filter(({ v }) => v.etapa === etapa);
+        const porStatus = [...new Set(daEtapa.map(({ v }) => v.status))].map((status) => ({ status, total: daEtapa.filter(({ v }) => v.status === status).length }));
+        return { etapa, ordem: ETAPAS[etapa].ordem, rotulo: ETAPAS[etapa].rotulo, total: daEtapa.length, porStatus };
       }),
-      totalUnidades: minhas.length,
-      entregues: minhas.length - emAndamento.length,
+      totalUnidades: vistas.length,
+      emAndamento: emAndamento.length,
+      entregues: vistas.filter(({ un, v }) => !v.encerradaParaPerfil && un.status === 'ENTREGUE').length,
+      recebidas: u.perfil === 'CONSTRUTORA' ? vistas.filter(({ v }) => v.encerradaParaPerfil).length : null,
+      pendenciasAbertas: vistas.reduce((n, { un }) => n + abertas(un), 0),
+      empreendimentos: db.emps
+        .map((emp) => ({ emp, lista: vistas.filter(({ un }) => un.empreendimentoId === emp.id) }))
+        .filter(({ lista }) => lista.length > 0)
+        .sort((a, b) => a.emp.nome.localeCompare(b.emp.nome))
+        .map(({ emp, lista }) => ({
+          id: emp.id, codigo: emp.codigo, nome: emp.nome, construtora: orgNome(emp.construtoraId), total: lista.length,
+          porEtapa: ORDEM.filter((e) => visiveis.includes(e)).map((etapa) => ({ etapa, ordem: ETAPAS[etapa].ordem, total: andando(lista).filter(({ v }) => v.etapa === etapa).length })),
+          concluidas: lista.length - andando(lista).length,
+          pendenciasAbertas: lista.reduce((n, { un }) => n + abertas(un), 0),
+          unidades: lista.map(({ un, v }) => ({ id: un.id, bloco: un.bloco, numero: un.numero, andar: un.andar, etapa: v.etapa, status: v.status, pendenciasAbertas: abertas(un) })),
+        })),
       fila,
       proximosAgendamentos: db.agendamentos
         .filter((a) => a.status === 'CONFIRMADO' && visiveis.includes(a.etapa) && noEscopo(u, db.unidades.find((x) => x.id === a.unidadeId)!))
@@ -484,6 +513,13 @@ const rotas: Rota[] = [
         .map((a) => {
           const un = db.unidades.find((x) => x.id === a.unidadeId)!;
           return { id: a.id, unidadeId: un.id, unidade: rotuloUn(un), empreendimento: empDe(un).nome, etapa: a.etapa, dataHora: a.dataHora, local: a.local };
+        }),
+      movimentacoes: db.eventos
+        .filter((e) => e.unidadeId && idsVisiveis.has(e.unidadeId) && e.statusNovo && (u.perfil !== 'CONSTRUTORA' || e.etapa === 'CONSTRUTORA_INCORPORADORA'))
+        .slice(-8).reverse()
+        .map((e) => {
+          const un = db.unidades.find((x) => x.id === e.unidadeId)!;
+          return { seq: e.seq, criadoEm: e.criadoEm, unidadeId: e.unidadeId, unidade: rotuloUn(un), empreendimento: empDe(un).nome, descricao: e.descricao, quem: e.atorNome, statusNovo: e.statusNovo };
         }),
     };
   }],
@@ -542,15 +578,23 @@ const rotas: Rota[] = [
     const termo = (q.busca ?? '').toLowerCase();
     return db.unidades
       .filter((un) => noEscopo(u, un))
-      .filter((un) => (!q.empreendimentoId || un.empreendimentoId === q.empreendimentoId) && (!q.etapa || un.etapa === q.etapa) && (!q.status || un.status === q.status))
+      .filter((un) => {
+        // os filtros valem sobre a situação que o perfil pode ver
+        const v = visao(u, un);
+        const recebida = un.etapa !== 'CONSTRUTORA_INCORPORADORA';
+        if (q.empreendimentoId && un.empreendimentoId !== q.empreendimentoId) return false;
+        if (q.etapa && (v.encerradaParaPerfil || v.etapa !== q.etapa)) return false;
+        if (q.status === 'RECEBIDA_INCORPORADORA') return recebida;
+        return !q.status || v.status === q.status;
+      })
       .filter((un) => !termo || un.numero.toLowerCase().includes(termo) || un.bloco.toLowerCase().includes(termo) || (u.perfil !== 'CONSTRUTORA' && (clienteDe(un)?.nome ?? '').toLowerCase().includes(termo)))
       .map((un) => {
         const emp = empDe(un);
         const cli = clienteDe(un);
         return {
-          ...un, empreendimento: { id: emp.id, nome: emp.nome, codigo: emp.codigo },
+          ...un, ...visao(u, un), empreendimento: { id: emp.id, nome: emp.nome, codigo: emp.codigo },
           cliente: u.perfil === 'CONSTRUTORA' || !cli ? null : { id: cli.id, nome: cli.nome },
-          pendenciasAbertas: db.pendencias.filter((p) => p.unidadeId === un.id && p.status === 'ABERTA').length,
+          pendenciasAbertas: db.pendencias.filter((p) => p.unidadeId === un.id && p.status === 'ABERTA' && etapasVisiveis(u.perfil).includes(p.etapa)).length,
         };
       })
       .sort((a: Reg, b: Reg) => a.empreendimento.nome.localeCompare(b.empreendimento.nome) || a.bloco.localeCompare(b.bloco) || a.numero.localeCompare(b.numero));
@@ -574,10 +618,11 @@ const rotas: Rota[] = [
     const visiveis = etapasVisiveis(u.perfil);
     const emp = empDe(un);
     const relac = u.perfil === 'RELACIONAMENTO' || admin(u);
-    const c = ETAPAS[un.etapa as Etapa];
+    const v = visao(u, un);
+    const c = ETAPAS[v.etapa];
     return {
-      unidade: { ...un, empreendimento: { id: emp.id, nome: emp.nome, codigo: emp.codigo, endereco: emp.endereco }, cliente: u.perfil === 'CONSTRUTORA' ? null : clienteDe(un) },
-      etapa: { ...c, chave: un.etapa },
+      unidade: { ...un, ...v, empreendimento: { id: emp.id, nome: emp.nome, codigo: emp.codigo, endereco: emp.endereco }, cliente: u.perfil === 'CONSTRUTORA' ? null : clienteDe(un) },
+      etapa: { ...c, chave: v.etapa },
       permissoes: {
         liberar: regras.liberar(u, un), proporHorarios: regras.propor(u, un), iniciarVistoria: regras.iniciar(u, un),
         resolverPendencias: regras.pendencias(u, un), editar: regras.cadastrar(u),

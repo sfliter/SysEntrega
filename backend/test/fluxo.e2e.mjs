@@ -329,6 +329,45 @@ async function fluxoCompleto(prisma) {
     assert.equal(d.documentos[0].envelope.status, 'CONCLUIDO');
     ok('cliente assina pelo link com código de uso único; código errado e reuso recusados; unidade ENTREGUE');
 
+    // ----- Dashboard e o que cada perfil acompanha -----
+    const versaoAntes = (await exigir(200, 'GET', '/dashboard/versao', { token: relac })).versao;
+    const dashRelac = await exigir(200, 'GET', '/dashboard', { token: relac });
+    assert.equal(dashRelac.etapas.length, 3);
+    assert.equal(dashRelac.versao, versaoAntes);
+    const empRelac = dashRelac.empreendimentos.find((e) => e.id === emp.id);
+    assert.equal(empRelac.unidades.find((x) => x.id === un.id).status, 'ENTREGUE');
+    assert.ok(dashRelac.movimentacoes.some((m) => m.unidadeId === un.id && /entregue ao cliente/.test(m.descricao)));
+    for (const token of [incorp, auditor, admin]) {
+      const d2 = await exigir(200, 'GET', '/dashboard', { token });
+      assert.equal(d2.empreendimentos.find((e) => e.id === emp.id).unidades.find((x) => x.id === un.id).status, 'ENTREGUE');
+    }
+    ok('dashboard: incorporadora, relacionamento, auditor e administrador acompanham a situação de cada unidade');
+
+    // A construtora deixa de acompanhar a unidade depois de recebida e aceita
+    const vistaConstrutora = await exigir(200, 'GET', `/unidades/${un.id}`, { token: construtora });
+    assert.equal(vistaConstrutora.unidade.status, 'RECEBIDA_INCORPORADORA');
+    assert.equal(vistaConstrutora.unidade.etapa, 'CONSTRUTORA_INCORPORADORA');
+    assert.equal(vistaConstrutora.unidade.atualizadoEm, null);
+    assert.ok(Object.values(vistaConstrutora.permissoes).every((p) => p === false));
+    const listaConstrutora = await exigir(200, 'GET', '/unidades', { token: construtora });
+    assert.equal(listaConstrutora.find((x) => x.id === un.id).status, 'RECEBIDA_INCORPORADORA');
+    assert.equal((await exigir(200, 'GET', '/unidades?status=ENTREGUE', { token: construtora })).some((x) => x.id === un.id), false);
+    assert.deepEqual(await exigir(200, 'GET', '/unidades?etapa=RELACIONAMENTO_CLIENTE', { token: construtora }), []);
+    assert.ok((await exigir(200, 'GET', '/unidades?status=RECEBIDA_INCORPORADORA', { token: construtora })).some((x) => x.id === un.id));
+    assert.ok((await exigir(200, 'GET', '/unidades?status=ENTREGUE', { token: relac })).some((x) => x.id === un.id));
+    const dashConstrutora = await exigir(200, 'GET', '/dashboard', { token: construtora });
+    assert.deepEqual(dashConstrutora.etapas.map((e) => e.etapa), ['CONSTRUTORA_INCORPORADORA']);
+    assert.ok(dashConstrutora.recebidas >= 1);
+    assert.equal(dashConstrutora.empreendimentos.find((e) => e.id === emp.id).unidades.find((x) => x.id === un.id).status, 'RECEBIDA_INCORPORADORA');
+    const textoConstrutora = JSON.stringify(dashConstrutora);
+    assert.equal(/ENTREGUE|João|Pereira|AGUARDANDO_CONFERENCIA/.test(textoConstrutora), false, 'o dashboard da construtora não revela as etapas seguintes');
+    assert.equal(dashConstrutora.movimentacoes.every((m) => !/cliente/i.test(m.descricao)), true);
+    const dashOutra = await exigir(200, 'GET', '/dashboard', { token: outra });
+    assert.equal(dashOutra.empreendimentos.some((e) => e.id === emp.id), false);
+    await exigir(201, 'POST', `/unidades/${un.id}/anotacoes`, { token: relac, corpo: { texto: 'Chaves reserva entregues.' } });
+    assert.ok((await exigir(200, 'GET', '/dashboard/versao', { token: relac })).versao > versaoAntes);
+    ok('a construtora acompanha só até a unidade ser recebida: depois vê "recebida pela incorporadora", sem as etapas seguintes');
+
     // O código só serve uma vez e nunca fica em claro no banco
     const noBanco = await prisma.signatario.findUnique({ where: { id: sigCliente.id } });
     assert.equal(noBanco.codigoHash, null);

@@ -13,15 +13,16 @@ export const ETAPAS: { chave: Etapa; ordem: number; rotulo: string; curto: strin
 export const ordemDaEtapa = (e: Etapa) => ETAPAS.find((x) => x.chave === e)!.ordem;
 export const rotuloDaEtapa = (e: Etapa) => ETAPAS.find((x) => x.chave === e)!.rotulo;
 
-export const STATUS: Record<StatusUnidade, { rotulo: string; tom: 'neutro' | 'andamento' | 'atencao' | 'perigo' | 'ok' }> = {
-  AGUARDANDO_LIBERACAO: { rotulo: 'Aguardando liberação', tom: 'neutro' },
-  AGUARDANDO_AGENDAMENTO: { rotulo: 'Aguardando agendamento', tom: 'atencao' },
-  VISTORIA_AGENDADA: { rotulo: 'Vistoria agendada', tom: 'andamento' },
-  AGUARDANDO_CONFERENCIA: { rotulo: 'Aguardando conferência', tom: 'atencao' },
-  EM_VISTORIA: { rotulo: 'Em vistoria', tom: 'andamento' },
-  COM_PENDENCIAS: { rotulo: 'Com pendências', tom: 'perigo' },
-  AGUARDANDO_ASSINATURA: { rotulo: 'Aguardando assinaturas', tom: 'atencao' },
-  ENTREGUE: { rotulo: 'Entregue ao cliente', tom: 'ok' },
+export const STATUS: Record<StatusUnidade, { rotulo: string; curto: string; tom: 'neutro' | 'andamento' | 'atencao' | 'perigo' | 'ok' }> = {
+  AGUARDANDO_LIBERACAO: { rotulo: 'Aguardando liberação', curto: 'Liberação', tom: 'neutro' },
+  AGUARDANDO_AGENDAMENTO: { rotulo: 'Aguardando agendamento', curto: 'Agendar', tom: 'atencao' },
+  VISTORIA_AGENDADA: { rotulo: 'Vistoria agendada', curto: 'Agendada', tom: 'andamento' },
+  AGUARDANDO_CONFERENCIA: { rotulo: 'Aguardando conferência', curto: 'Conferir', tom: 'atencao' },
+  EM_VISTORIA: { rotulo: 'Em vistoria', curto: 'Vistoria', tom: 'andamento' },
+  COM_PENDENCIAS: { rotulo: 'Com pendências', curto: 'Pendência', tom: 'perigo' },
+  AGUARDANDO_ASSINATURA: { rotulo: 'Aguardando assinaturas', curto: 'Assinar', tom: 'atencao' },
+  ENTREGUE: { rotulo: 'Entregue ao cliente', curto: 'Entregue', tom: 'ok' },
+  RECEBIDA_INCORPORADORA: { rotulo: 'Recebida pela incorporadora', curto: 'Recebida', tom: 'ok' },
 };
 
 export const PERFIL: Record<Perfil, string> = {

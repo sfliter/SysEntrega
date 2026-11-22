@@ -136,6 +136,15 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
           da construtora.
         </p>
 
+        <h3>Dashboard ao vivo</h3>
+        <p>
+          O Dashboard mostra cada empreendimento com o espelho das unidades, na cor da situação de cada uma, e se
+          atualiza sozinho quando alguém age em qualquer unidade. Incorporadora, Central de Relacionamento, Auditor e
+          Administrador acompanham tudo. A <strong>Construtora</strong> acompanha as suas obras só até a unidade ser
+          recebida e a vistoria aceita: depois disso ela vê apenas &ldquo;Recebida pela incorporadora&rdquo;. Compare
+          trocando o perfil em <em>ver como</em>.
+        </p>
+
         <h3>Vistoria sem sinal</h3>
         <p>
           Durante uma vistoria, clique em <strong>Simular queda de sinal</strong> e continue avaliando e anexando

@@ -2,9 +2,13 @@
 
 Sistema de gestão de **recebimento e entrega de unidades**: acompanha cada unidade desde a liberação pela construtora até a entrega das chaves ao cliente, com agendamento, vistoria, aceite assinado pelas duas partes e trilha de auditoria de todos os passos.
 
-| Painel | Unidade |
+| Dashboard | Unidade |
 |---|---|
-| ![Painel](docs/telas/painel.png) | ![Unidade](docs/telas/unidade-aguardando-cliente.png) |
+| ![Dashboard](docs/telas/painel.png) | ![Unidade](docs/telas/unidade-aguardando-cliente.png) |
+
+| Dashboard da construtora (só até a unidade ser recebida) |
+|---|
+| ![Dashboard da construtora](docs/telas/dashboard-construtora.png) |
 
 | Vistoria sem sinal | Assinatura do cliente | Auditoria |
 |---|---|---|
@@ -94,7 +98,25 @@ A coleta de assinaturas fica atrás de um adaptador ([`backend/src/assinaturas/p
 
 > **Importante:** o repositório do rsf-signer ainda não tem API publicada. O adaptador segue um **contrato proposto** e foi testado contra um serviço simulado que implementa esse contrato — não contra o rsf-signer real. Quando a API real existir, os ajustes ficam em um único arquivo: `backend/src/assinaturas/rsf-signer.provedor.ts`.
 
-### 6. Complementos
+### 6. Dashboard de acompanhamento
+
+A tela inicial de cada perfil é o **Dashboard**, que se atualiza sozinho: a cada 5 segundos a tela confere se houve novidade no servidor e, havendo, recarrega os dados — sem precisar atualizar a página (o indicador *Ao vivo* mostra a hora da última atualização).
+
+- **Indicadores**: unidades em andamento, pendências em aberto, o que está aguardando o próprio usuário e as entregues.
+- **Por etapa**: quantas unidades há em cada uma das três passagens, por situação.
+- **Empreendimentos**: para cada um, a barra de avanço por etapa e o **espelho das unidades** — cada unidade um quadro na cor da sua situação (cinza aguardando liberação, âmbar aguardando ação, azul vistoria agendada ou em curso, vermelho com pendências, verde concluída), agrupadas por bloco e andar. Um clique abre a unidade.
+- **Aguardando você**, **próximas vistorias** e **últimas movimentações**.
+
+Quem acompanha o quê:
+
+| Perfil | No Dashboard |
+|---|---|
+| Incorporadora, Central de Relacionamento, Auditor, Administrador | Todos os empreendimentos e a situação de cada unidade, em todas as etapas |
+| Construtora | Só as obras dela, e só **até a unidade ser recebida** (vistoria aceita e termo assinado pelas duas partes). Depois disso a unidade aparece apenas como *Recebida pela incorporadora*: a construtora não vê a situação, as datas nem as movimentações das etapas seguintes — nem pelos filtros, nem pela planilha. O termo e o histórico da etapa de recebimento continuam disponíveis para ela |
+
+A lista de unidades e a tela de cada unidade também se atualizam sozinhas.
+
+### 7. Complementos
 
 - **Anotações** no histórico da unidade (combinados, ocorrências), gravadas na trilha de auditoria.
 - **Avisos por e-mail** a quem precisa agir a cada mudança de situação (`NOTIFICAR_POR_EMAIL=1`); a construtora só recebe os das obras dela, e os avisos não levam dados do cliente.
@@ -129,7 +151,7 @@ cd frontend && npm install && npm run build:demo
 
 | Perfil | Enxerga | Pode |
 |---|---|---|
-| **Construtora** | Só as unidades das obras da sua construtora, e só a etapa 1 delas (sem dados do cliente) | Liberar, oferecer/confirmar horários, resolver pendências, assinar pela construtora |
+| **Construtora** | Só as unidades das obras da sua construtora, e só até serem recebidas pela incorporadora (sem dados do cliente nem das etapas seguintes) | Liberar, oferecer/confirmar horários, resolver pendências, assinar pela construtora |
 | **Incorporadora** | Tudo | Cadastrar empreendimentos, unidades e clientes; vistoriar na etapa 1; repassar na etapa 2; assinar pela incorporadora |
 | **Relacionamento** | Tudo | Conferir o repasse; cadastrar e vincular clientes; agendar e vistoriar com o cliente; assinar pela central |
 | **Auditor** | Tudo, inclusive a trilha completa | Nada (somente leitura — o bloqueio é no servidor) |
@@ -239,7 +261,7 @@ Todas sob `/api`.
 - `GET /documentos/:id/pdf?versao=original|assinado`
 - `POST /signatarios/:id/assinar | recusar` · `POST /envelopes/:id/cancelar | reenviar | sincronizar`
 - `GET /auditoria` · `GET /auditoria/verificar` · `GET /auditoria/exportar.csv`
-- `GET /dashboard` · `GET /saude`
+- `GET /dashboard` · `GET /dashboard/versao` (número do último registro, para a atualização ao vivo) · `GET /saude`
 - Cadastros: `/organizacoes`, `/empreendimentos`, `/clientes`, `/usuarios`, `/pauta`
 - Sem login (cliente): `/publico/agendamento/:token…`, `/publico/assinatura/:token…`, `/publico/verificar/:protocolo`
 - Webhook: `POST /assinaturas/webhooks/rsf-signer`

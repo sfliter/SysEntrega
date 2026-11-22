@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, baixarBlob, DEMO, mensagemDeErro } from '../api';
+import { useAoVivo } from '../aoVivo';
 import { useAuth } from '../auth';
 import { Carregando, Erro, Modal, PillStatus, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import Trilho from '../components/Trilho';
@@ -30,6 +31,15 @@ export default function Unidades() {
     async () =>
       (await api.get('/unidades', { params: Object.fromEntries(Object.entries(filtro).filter(([, v]) => v)) })).data,
     [params.toString()],
+  );
+
+  useAoVivo(lista.recarregar);
+  const construtora = usuario?.perfil === 'CONSTRUTORA';
+  // A construtora só acompanha a primeira etapa; os demais nunca veem "recebida"
+  const situacoes = (Object.keys(STATUS) as StatusUnidade[]).filter((s) =>
+    construtora
+      ? !['AGUARDANDO_CONFERENCIA', 'ENTREGUE'].includes(s)
+      : s !== 'RECEBIDA_INCORPORADORA',
   );
 
   function mudar(chave: string, valor: string) {
@@ -96,22 +106,24 @@ export default function Unidades() {
             ))}
           </select>
         </label>
-        <label className="campo">
-          <span>Etapa</span>
-          <select value={filtro.etapa} onChange={(e) => mudar('etapa', e.target.value)}>
-            <option value="">Todas</option>
-            {ETAPAS.map((e) => (
-              <option key={e.chave} value={e.chave}>
-                {e.ordem}. {e.rotulo}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!construtora && (
+          <label className="campo">
+            <span>Etapa</span>
+            <select value={filtro.etapa} onChange={(e) => mudar('etapa', e.target.value)}>
+              <option value="">Todas</option>
+              {ETAPAS.map((e) => (
+                <option key={e.chave} value={e.chave}>
+                  {e.ordem}. {e.rotulo}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="campo">
           <span>Situação</span>
           <select value={filtro.status} onChange={(e) => mudar('status', e.target.value)}>
             <option value="">Todas</option>
-            {(Object.keys(STATUS) as StatusUnidade[]).map((s) => (
+            {situacoes.map((s) => (
               <option key={s} value={s}>
                 {STATUS[s].rotulo}
               </option>
@@ -168,7 +180,7 @@ export default function Unidades() {
                     )}
                   </td>
                   <td>{u.cliente?.nome ?? <span className="suave">—</span>}</td>
-                  <td className="nao-quebra suave">{u.status === 'ENTREGUE' ? '—' : haQuanto(u.atualizadoEm)}</td>
+                  <td className="nao-quebra suave">{u.status === 'ENTREGUE' || !u.atualizadoEm ? '—' : haQuanto(u.atualizadoEm)}</td>
                 </tr>
               ))}
             </tbody>
