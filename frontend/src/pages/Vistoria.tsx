@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, baixarBlob, mensagemDeErro, semConexao } from '../api';
+import Abas from '../components/Abas';
 import { Carregando, Erro, Modal, Pill, useAcao } from '../components/Basicos';
 import { useFila } from '../components/Conexao';
 import { fila, type Operacao } from '../fila';
@@ -71,6 +72,8 @@ export default function Vistoria() {
   const [acompanhante, setAcompanhante] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [cancelando, setCancelando] = useState(false);
+  // Um ambiente por vez: no celular, cada um cabe na tela sem rolagem longa
+  const [ambienteEscolhido, setAmbienteEscolhido] = useState('');
   const concluir = useAcao();
   const versao = useRef(0);
 
@@ -152,6 +155,21 @@ export default function Vistoria() {
   const itens = dados.itens;
   const avaliados = itens.filter((i) => i.resultado).length;
   const ambientes = [...new Set(itens.map((i) => i.ambiente))];
+  const CONCLUIR = '__concluir__';
+  const abas = [
+    ...ambientes.map((a) => {
+      const doAmbiente = itens.filter((i) => i.ambiente === a);
+      const feitos = doAmbiente.filter((i) => i.resultado).length;
+      return { chave: a, rotulo: a, selo: `${feitos}/${doAmbiente.length}`, tom: feitos === doAmbiente.length ? 'ok' : undefined };
+    }),
+    ...(editavel ? [{ chave: CONCLUIR, rotulo: 'Concluir' }] : []),
+  ];
+  const ambienteAtual = abas.some((a) => a.chave === ambienteEscolhido) ? ambienteEscolhido : abas[0]?.chave ?? '';
+  const proximo = abas[abas.findIndex((a) => a.chave === ambienteAtual) + 1];
+  const irPara = (chave: string) => {
+    setAmbienteEscolhido(chave);
+    document.querySelector('.conteudo')?.scrollTo({ top: 0 });
+  };
   const semJustificativa = itens.filter(
     (i) => (i.resultado === 'NAO_CONFORME' || i.resultado === 'RESSALVA') && !i.observacao,
   ).length;
@@ -225,6 +243,8 @@ export default function Vistoria() {
         {dados.status === 'CANCELADA' && <Pill tom="neutro">Cancelada</Pill>}
       </header>
 
+      {/* fica à vista enquanto a lista rola: o avanço, a situação do envio e os ambientes */}
+      <div className="vistoria-fixo">
       {dados.status === 'EM_ANDAMENTO' && (
         <div className="progresso">
           <div className="progresso-linha" aria-label={`${avaliados} de ${itens.length} itens avaliados`}>
@@ -251,6 +271,9 @@ export default function Vistoria() {
           )}
         </div>
       )}
+
+      <Abas abas={abas} atual={ambienteAtual} aoMudar={irPara} rotulo="Ambientes da vistoria" classe="abas-ambiente" />
+      </div>
 
       {copiaDe !== null && (
         <div className="aviso" role="status">
@@ -298,7 +321,8 @@ export default function Vistoria() {
         </section>
       )}
 
-      {ambientes.map((ambiente) => (
+
+      {ambientes.filter((a) => a === ambienteAtual).map((ambiente) => (
         <section key={ambiente} className="cartao">
           <h2>{ambiente}</h2>
           {itens
@@ -315,10 +339,17 @@ export default function Vistoria() {
                 aoMudarFotos={carregar}
               />
             ))}
+          {proximo && (
+            <div className="passo-acoes">
+              <button type="button" className="botao botao-primario" onClick={() => irPara(proximo.chave)}>
+                {proximo.chave === CONCLUIR ? 'Ir para a conclusão' : `Próximo: ${proximo.rotulo}`}
+              </button>
+            </div>
+          )}
         </section>
       ))}
 
-      {editavel && (
+      {editavel && ambienteAtual === CONCLUIR && (
         <section className="cartao cartao-destaque">
           <h2>Concluir</h2>
           <Erro>{concluir.erro}</Erro>

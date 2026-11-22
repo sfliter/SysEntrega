@@ -6,6 +6,10 @@ Sistema de gestão de **recebimento e entrega de unidades**: acompanha cada unid
 |---|---|
 | ![Dashboard](docs/telas/painel.png) | ![Unidade](docs/telas/unidade-aguardando-cliente.png) |
 
+| Dashboard · Torres (cada unidade na cor da sua situação) | Configuração · Montar torre por faixas de pavimentos |
+|---|---|
+| ![Torres](docs/telas/dashboard-torres.png) | ![Montar torre](docs/telas/montar-torre.png) |
+
 | Dashboard da construtora (só até a unidade ser recebida) |
 |---|
 | ![Dashboard da construtora](docs/telas/dashboard-construtora.png) |
@@ -60,7 +64,8 @@ As regras de cada etapa (quem libera, quem oferece horários, quem vistoria, que
 
 ### 2. Vistoria e aceite das duas partes
 
-- Pauta de itens **configurável por etapa** (Cadastros → Pauta de vistoria), agrupada por ambiente. A pauta é copiada para a vistoria no início: mudar a pauta não altera vistorias já feitas.
+- Pauta de itens **configurável por etapa** (Configuração → Pauta de vistoria), agrupada por ambiente. A pauta é copiada para a vistoria no início: mudar a pauta não altera vistorias já feitas.
+- Na tela da vistoria **cada ambiente é uma aba** (com o contador de itens já avaliados) e o botão *Próximo* leva ao ambiente seguinte; a última aba é *Concluir*. O andamento e a situação do envio ficam fixos no alto.
 - Cada item recebe **Conforme**, **Ressalva**, **Não conforme** ou **N/A**, observação (obrigatória em ressalva e não conforme) e fotos — capturadas pelo celular e reduzidas no aparelho antes do envio. Tudo é salvo a cada toque.
 - O termo em PDF traz a identificação da unidade e das partes, o resultado item a item com as fotos, as pendências sanadas de vistorias anteriores e a declaração de aceite. A versão assinada acrescenta a página de assinaturas com as evidências.
 
@@ -102,10 +107,11 @@ A coleta de assinaturas fica atrás de um adaptador ([`backend/src/assinaturas/p
 
 A tela inicial de cada perfil é o **Dashboard**, que se atualiza sozinho: a cada 5 segundos a tela confere se houve novidade no servidor e, havendo, recarrega os dados — sem precisar atualizar a página (o indicador *Ao vivo* mostra a hora da última atualização).
 
-- **Indicadores**: unidades em andamento, pendências em aberto, o que está aguardando o próprio usuário e as entregues.
-- **Por etapa**: quantas unidades há em cada uma das três passagens, por situação.
-- **Empreendimentos**: para cada um, a barra de avanço por etapa e o **espelho das unidades** — cada unidade um quadro na cor da sua situação (cinza aguardando liberação, âmbar aguardando ação, azul vistoria agendada ou em curso, vermelho com pendências, verde concluída), agrupadas por bloco e andar. Um clique abre a unidade.
-- **Aguardando você**, **próximas vistorias** e **últimas movimentações**.
+O Dashboard é dividido em três abas, para caber na tela sem rolagem longa:
+
+- **Visão geral** — indicadores (em andamento, pendências em aberto, o que está aguardando o próprio usuário, entregues), quantas unidades há em cada uma das três passagens, por situação, a lista **Aguardando você** e as **próximas vistorias**.
+- **Torres** — um empreendimento por vez (escolhido nos botões no alto). Para cada um, a barra de avanço por etapa e as **torres desenhadas**: os pavimentos empilhados do mais alto para o térreo, cada unidade um quadro na cor da sua situação (cinza aguardando liberação, âmbar aguardando ação, azul vistoria agendada ou em curso, vermelho com pendências, verde entregue), com a etapa em que está. Um clique abre a unidade.
+- **Movimentações** — os últimos registros.
 
 Quem acompanha o quê:
 
@@ -116,7 +122,30 @@ Quem acompanha o quê:
 
 A lista de unidades e a tela de cada unidade também se atualizam sozinhas.
 
-### 7. Complementos
+### 7. Montagem das torres
+
+Em **Configuração → Torres e unidades** a torre é montada de uma vez, por **faixas de pavimentos**. Cada faixa tem os seus próprios campos:
+
+| Campo | Para quê |
+|---|---|
+| Do andar / Até o andar | Os pavimentos da faixa |
+| Unidades por andar | Quantas unidades em cada pavimento da faixa |
+| Numeração | *Andar + final* (101, 102… 201, 202…) ou *Sequencial* (1, 2, 3… seguindo de um andar para o outro) |
+| Final começa em / Começa em | O primeiro número (final 1 → 101; final 5 → 105) |
+| Casas do final | 2 → 101; 1 → 11; 3 → 1001 |
+| Prefixo e sufixo | Mudam a nomenclatura da faixa (ex.: `COB 1201`, `101 A`) |
+| Tipologia | Gravada em cada unidade da faixa |
+| Andares que não existem | Pavimentos pulados dentro da faixa (ex.: `13`) |
+
+Exemplo: faixa 1 do 1º ao 10º andar com 8 unidades (101…1008) e faixa 2 do 12º ao 14º com 4 unidades e prefixo `COB` (COB 1201…COB 1404). A tela mostra a **prévia da torre desenhada** enquanto se digita, aponta números repetidos antes de gravar e cria tudo com um clique. Rodar de novo na mesma torre **completa** o que falta — as unidades que já existem ficam como estão. Cada unidade criada e a montagem em si ficam na trilha de auditoria. O limite é de 1.500 unidades por montagem.
+
+Unidades avulsas continuam podendo ser criadas e corrigidas uma a uma na tela *Unidades*.
+
+### 8. Navegação
+
+O sistema ocupa exatamente a janela do navegador: o menu fica fixo e **só a área de informações rola**. As telas longas foram divididas em abas — Dashboard (Visão geral, Torres, Movimentações), Unidade (Pendências, Termos e assinaturas, Vistorias e agenda, Histórico), Vistoria (um ambiente por aba) e Configuração (Torres e unidades, Empreendimentos, Clientes, Organizações, Pauta de vistoria, Usuários). A aba aberta fica no endereço da página, então o link compartilhado abre no mesmo lugar.
+
+### 9. Complementos
 
 - **Anotações** no histórico da unidade (combinados, ocorrências), gravadas na trilha de auditoria.
 - **Avisos por e-mail** a quem precisa agir a cada mudança de situação (`NOTIFICAR_POR_EMAIL=1`); a construtora só recebe os das obras dela, e os avisos não levam dados do cliente.
@@ -134,7 +163,7 @@ Tudo isso está em um arquivo só de aparência — [`frontend/src/styles.css`](
 
 Um login só, que **vê e opera o sistema como qualquer perfil**. No menu aparece o seletor **Conta de teste · ver como**, com Administrador, Incorporadora, cada Construtora cadastrada, Central de Relacionamento e Auditor; ao trocar, o sistema passa a se comportar exatamente como para aquele perfil (mesmas telas, mesmo escopo, mesmas regras).
 
-- Criar: `SEED_CONTA_TESTE=1` no `.env` cria `teste@sysentrega.local` (senha de `SEED_SENHA_PADRAO`). Ou marque **Conta de teste** em Cadastros → Usuários.
+- Criar: `SEED_CONTA_TESTE=1` no `.env` cria `teste@sysentrega.local` (senha de `SEED_SENHA_PADRAO`). Ou marque **Conta de teste** em Configuração → Usuários.
 - Ligar: `CONTAS_DE_TESTE=1` no servidor. Sem isso, a conta é apenas um usuário de leitura e a troca de perfil não existe.
 - Tudo o que a conta de teste faz fica registrado como tal na auditoria, no perfil escolhido — **inclusive assinaturas de termos**. Por isso o recomendado é usá-la em **homologação e treinamento** e deixar `CONTAS_DE_TESTE` vazio em operação.
 
@@ -253,6 +282,7 @@ Todas sob `/api`.
 - `POST /auth/login` · `GET /auth/me` · `POST /auth/trocar-senha`
 - `GET /auth/perfis-de-teste` · `POST /auth/ver-como` — conta de teste
 - `GET/POST /unidades` · `GET/PATCH /unidades/:id` · `GET /unidades/:id/historico`
+- `POST /unidades/lote` — monta ou completa uma torre (lista de unidades com número, andar e tipologia)
 - `POST /unidades/:id/liberar` — libera para a etapa, ou reapresenta após pendências
 - `POST /unidades/:id/anotacoes` · `GET /unidades/exportar.csv`
 - `POST /pendencias/:id/resolver`

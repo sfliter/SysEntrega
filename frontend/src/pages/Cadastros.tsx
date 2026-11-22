@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { Carregando, Erro, Modal, Pill, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import { ETAPAS, formatarCpfCnpj, ordemDaEtapa, PERFIL } from '../fluxo';
 import type { Etapa, Perfil } from '../tipos';
+import Torres from './Torres';
 
 type Linha = Record<string, any>;
 
@@ -164,31 +165,38 @@ export default function Cadastros() {
     },
   ];
 
-  const aba = abas.find((a) => a.chave === params.get('aba')) ?? abas[0];
+  // A primeira aba é a montagem das torres; as demais são cadastros em tabela
+  const TORRES = { chave: 'torres', rotulo: 'Torres e unidades' };
+  const pedida = params.get('aba') ?? TORRES.chave;
+  const aba = abas.find((a) => a.chave === pedida);
 
   return (
     <>
       <header className="pagina-topo">
         <div>
-          <p className="etiqueta">Cadastros</p>
-          <h1>{aba.rotulo}</h1>
+          <p className="etiqueta">Configuração</p>
+          <h1>{aba?.rotulo ?? TORRES.rotulo}</h1>
         </div>
       </header>
-      <div className="abas" role="tablist">
-        {abas.map((a) => (
+      <div className="abas" role="tablist" aria-label="Seções da configuração">
+        {[TORRES, ...abas].map((a) => (
           <button
             key={a.chave}
             type="button"
             role="tab"
-            aria-selected={a.chave === aba.chave}
-            className={`aba ${a.chave === aba.chave ? 'ativa' : ''}`}
+            aria-selected={a.chave === (aba?.chave ?? TORRES.chave)}
+            className={`aba ${a.chave === (aba?.chave ?? TORRES.chave) ? 'ativa' : ''}`}
             onClick={() => setParams({ aba: a.chave }, { replace: true })}
           >
             {a.rotulo}
           </button>
         ))}
       </div>
-      <Aba key={aba.chave} def={aba} aoMudar={aba.chave === 'organizacoes' ? orgs.recarregar : undefined} />
+      {aba ? (
+        <Aba key={aba.chave} def={aba} aoMudar={aba.chave === 'organizacoes' ? orgs.recarregar : undefined} />
+      ) : (
+        <Torres podeEditar={admin || perfil === 'INCORPORADORA'} />
+      )}
     </>
   );
 }

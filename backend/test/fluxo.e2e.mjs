@@ -156,6 +156,31 @@ async function fluxoCompleto(prisma) {
     await exigir(409, 'POST', '/unidades', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: 'Teste', numeros: [numero] } });
     ok('incorporadora cadastra a unidade; construtora não pode; duplicada recusada');
 
+    // Montagem de torre: faixas de pavimentos com quantidades e numeração diferentes
+    const torre = `Torre ${Date.now().toString().slice(-6)}`;
+    const andares = (de, ate, porAndar, prefixo = '') =>
+      Array.from({ length: ate - de + 1 }, (_, a) => Array.from({ length: porAndar }, (_, i) => ({
+        numero: `${prefixo}${de + a}${String(i + 1).padStart(2, '0')}`, andar: String(de + a), tipologia: prefixo ? 'Cobertura' : '2 dormitórios',
+      }))).flat();
+    const planta = [...andares(1, 3, 4), ...andares(5, 5, 2, 'COB ')];
+    const configuracao = { faixas: [{ andarInicial: 1, andarFinal: 3, porAndar: 4 }, { andarInicial: 5, andarFinal: 5, porAndar: 2, prefixo: 'COB ' }] };
+    await exigir(403, 'POST', '/unidades/lote', { token: construtora, corpo: { empreendimentoId: emp.id, bloco: torre, unidades: planta } });
+    await exigir(400, 'POST', '/unidades/lote', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: torre, unidades: [...planta, planta[0]] } });
+    assert.deepEqual(await exigir(201, 'POST', '/unidades/lote', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: torre, unidades: planta, configuracao } }), { criadas: 14, jaExistiam: 0 });
+    await exigir(409, 'POST', '/unidades/lote', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: torre, unidades: planta } });
+    assert.deepEqual(
+      await exigir(201, 'POST', '/unidades/lote', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: torre, unidades: [...planta, ...andares(4, 4, 4)], completar: true } }),
+      { criadas: 4, jaExistiam: 14 },
+    );
+    const daTorre = (await exigir(200, 'GET', `/unidades?busca=${encodeURIComponent(torre)}`, { token: incorp })).filter((x) => x.bloco === torre);
+    assert.equal(daTorre.length, 18);
+    assert.deepEqual(daTorre.filter((x) => x.andar === '5').map((x) => x.numero).sort(), ['COB 501', 'COB 502']);
+    assert.ok(daTorre.every((x) => x.etapa === 'CONSTRUTORA_INCORPORADORA' && x.status === 'AGUARDANDO_LIBERACAO'));
+    const montagem = (await exigir(200, 'GET', '/auditoria?acao=TORRE_MONTADA&porPagina=2', { token: admin })).eventos;
+    assert.match(montagem[1].descricao, /14 unidade\(s\) criada\(s\) em 4 pavimento/);
+    assert.match(montagem[0].descricao, /4 unidade\(s\) criada\(s\).*14 já existiam/);
+    ok('torre montada por faixas de pavimentos (quantidades e numeração diferentes); completar mantém as existentes');
+
     await exigir(404, 'GET', `/unidades/${un.id}`, { token: outra });
     await exigir(200, 'GET', `/unidades/${un.id}`, { token: construtora });
     assert.equal((await exigir(200, 'GET', '/unidades', { token: outra })).some((u) => u.id === un.id), false);

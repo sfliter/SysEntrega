@@ -83,7 +83,9 @@ try {
 
   await page.goto(`${BASE}/unidades/${un.id}`);
   await page.getByRole('button', { name: 'Iniciar vistoria' }).click();
-  await page.getByRole('heading', { name: 'Concluir' }).waitFor();
+  // a vistoria abre no primeiro ambiente (Geral, 5 itens); os demais ficam nas abas
+  const ambientes = (pg) => pg.getByRole('tablist', { name: 'Ambientes da vistoria' });
+  await ambientes(page).waitFor();
   const vistoriaId = page.url().split('/').pop();
 
   await marcar(0, 'Conforme');
@@ -105,7 +107,9 @@ try {
   await page.getByText(/Sem sinal: \d+ alteração\(ões\) salva\(s\) neste aparelho/).first().waitFor();
   await page.getByText('5/18').waitFor();
   assert.deepEqual(await noServidor(vistoriaId, incorp), { avaliados: 1, fotos: 0, observacoes: [] });
+  await ambientes(page).getByRole('tab', { name: 'Concluir' }).click();
   await page.getByRole('button', { name: /Faltam 13 itens/ }).waitFor();
+  await ambientes(page).getByRole('tab', { name: /Geral/ }).click();
   await retrato('20-vistoria-sem-sinal');
   ok('sem sinal, o vistoriador continua: avaliações, observação e foto ficam salvas no aparelho (nada chegou ao servidor)');
 
@@ -153,7 +157,8 @@ try {
 
   // ---------- o servidor recusa (a vistoria foi cancelada em outro aparelho) ----------
   await ctx.setOffline(true);
-  await outra.getByRole('group').nth(5).getByRole('button', { name: 'Conforme', exact: true }).click();
+  await ambientes(outra).getByRole('tab', { name: /Instalações elétricas/ }).click();
+  await outra.getByRole('group').nth(0).getByRole('button', { name: 'Conforme', exact: true }).click();
   await chamar('POST', `/vistorias/${vistoriaId}/cancelar`, incorp, { motivo: 'Cancelada em outro aparelho (teste)' });
   await ctx.setOffline(false);
   await outra.getByRole('heading', { name: 'Alterações que o servidor recusou' }).waitFor({ timeout: 30000 });

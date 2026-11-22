@@ -613,6 +613,24 @@ const rotas: Rota[] = [
       return un;
     });
   }],
+  ['POST', /^\/unidades\/lote$/, ({ u, corpo }) => {
+    if (!regras.cadastrar(u)) recusar();
+    const emp = db.emps.find((e) => e.id === corpo.empreendimentoId) ?? invalido('Empreendimento não encontrado');
+    const bloco = String(corpo.bloco ?? '').trim();
+    if (!bloco) invalido('Informe o nome da torre');
+    const pedidas: Reg[] = corpo.unidades ?? [];
+    const existe = (numero: string) => db.unidades.some((un) => un.empreendimentoId === emp.id && un.bloco === bloco && un.numero === numero);
+    const jaExistiam = pedidas.filter((p) => existe(p.numero)).length;
+    if (jaExistiam && !corpo.completar) throw new Falha(409, `Já existem ${jaExistiam} unidade(s) com esta numeração na torre.`);
+    const novas = pedidas.filter((p) => !existe(p.numero));
+    for (const p of novas) {
+      const un: Reg = { id: novoId('un'), empreendimentoId: emp.id, bloco, numero: p.numero, andar: p.andar || null, tipologia: p.tipologia || null, clienteId: null, etapa: 'CONSTRUTORA_INCORPORADORA', status: 'AGUARDANDO_LIBERACAO', liberadaPorId: null, atualizadoEm: iso() };
+      db.unidades.push(un);
+      registrar({ acao: 'UNIDADE_CADASTRADA', descricao: `Unidade ${rotuloUn(un)} cadastrada em ${emp.nome}`, ator: atorDe(u), unidade: un, novo: estado(un.etapa, un.status) });
+    }
+    registrar({ acao: 'TORRE_MONTADA', descricao: `Torre "${bloco}" de ${emp.nome}: ${novas.length} unidade(s) criada(s)${jaExistiam ? `; ${jaExistiam} já existiam e foram mantidas` : ''}`, ator: atorDe(u), entidade: 'Empreendimento' });
+    return { criadas: novas.length, jaExistiam };
+  }],
   ['GET', /^\/unidades\/(\w+)$/, ({ u }, id) => {
     const un = unidade(id, u);
     const visiveis = etapasVisiveis(u.perfil);

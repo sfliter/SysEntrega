@@ -16,7 +16,7 @@ export default function Layout() {
     { para: '/', rotulo: 'Dashboard', fim: true },
     { para: '/unidades', rotulo: 'Unidades' },
     { para: '/agenda', rotulo: 'Agenda' },
-    ...(perfil !== 'CONSTRUTORA' ? [{ para: '/cadastros', rotulo: 'Cadastros' }] : []),
+    ...(perfil !== 'CONSTRUTORA' ? [{ para: '/cadastros', rotulo: 'Configuração' }] : []),
     ...(perfil === 'ADMINISTRADOR' || perfil === 'AUDITOR'
       ? [{ para: '/auditoria', rotulo: 'Auditoria' }]
       : []),

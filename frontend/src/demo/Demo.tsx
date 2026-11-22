@@ -44,7 +44,7 @@ export function Moldura({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <div className="demo-tela">
       <div className="demo-barra">
         <span className="demo-selo">Demonstração</span>
         {paginaDoCliente ? (
@@ -84,7 +84,7 @@ export function Moldura({ children }: { children: ReactNode }) {
       </div>
       {roteiro && <Roteiro aoFechar={() => setRoteiro(false)} />}
       {termo && <Termo caminho={termo} aoFechar={() => setTermo(null)} />}
-    </>
+    </div>
   );
 }
 
@@ -136,9 +136,18 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
           da construtora.
         </p>
 
+        <h3>Torres</h3>
+        <p>
+          Em <strong>Configuração → Torres e unidades</strong> (como Incorporadora ou Administrador) a torre é montada
+          por faixas de pavimentos: andares, unidades por andar, numeração, prefixo e sufixo de cada faixa. Experimente
+          do 1º ao 10º com 8 unidades e, em outra faixa, do 12º ao 14º com 4 e prefixo <em>COB</em>: a prévia desenha a
+          torre enquanto você digita. Depois de criar, ela aparece na aba <em>Torres</em> do Dashboard.
+        </p>
+
         <h3>Dashboard ao vivo</h3>
         <p>
-          O Dashboard mostra cada empreendimento com o espelho das unidades, na cor da situação de cada uma, e se
+          O Dashboard tem três abas — Visão geral, Torres e Movimentações. Em <em>Torres</em>, cada empreendimento
+          aparece com as torres desenhadas, cada unidade na cor da sua situação, e tudo se
           atualiza sozinho quando alguém age em qualquer unidade. Incorporadora, Central de Relacionamento, Auditor e
           Administrador acompanham tudo. A <strong>Construtora</strong> acompanha as suas obras só até a unidade ser
           recebida e a vistoria aceita: depois disso ela vê apenas &ldquo;Recebida pela incorporadora&rdquo;. Compare
@@ -172,7 +181,7 @@ function Roteiro({ aoFechar }: { aoFechar: () => void }) {
             o cliente, ele escolhe pelo link ou o Relacionamento registra a escolha feita por telefone.
           </li>
           <li>
-            <strong>Itens da vistoria:</strong> a pauta de cada etapa é um ponto de partida e é editável em Cadastros.
+            <strong>Itens da vistoria:</strong> a pauta de cada etapa é um ponto de partida e é editável em Configuração.
           </li>
           <li>
             <strong>Textos dos termos:</strong> as declarações de aceite precisam de revisão do jurídico.

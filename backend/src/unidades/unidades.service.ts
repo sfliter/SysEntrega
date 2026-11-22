@@ -418,6 +418,103 @@ export class UnidadesService {
     });
   }
 
+  // Monta (ou completa) uma torre: cria de uma vez as unidades de um bloco,
+  // já com andar e numeração. Com `completar`, as que já existem são
+  // mantidas e só as que faltam são criadas — nada é apagado nem alterado.
+  async criarLote(
+    dto: {
+      empreendimentoId: string;
+      bloco: string;
+      unidades: { numero: string; andar?: string; tipologia?: string }[];
+      configuracao?: Record<string, unknown>;
+      completar?: boolean;
+    },
+    ctx: Contexto,
+  ) {
+    this.exigir(regras.podeCadastrarUnidades(ctx.usuario));
+    const emp = await this.prisma.empreendimento.findUnique({
+      where: { id: dto.empreendimentoId },
+    });
+    if (!emp) throw new BadRequestException('Empreendimento não encontrado');
+    const bloco = dto.bloco.trim();
+    if (!bloco) throw new BadRequestException('Informe o nome da torre');
+    const pedidas = dto.unidades.map((u) => ({
+      numero: u.numero.trim(),
+      andar: u.andar?.trim() || null,
+      tipologia: u.tipologia?.trim() || null,
+    }));
+    if (pedidas.some((u) => !u.numero)) throw new BadRequestException('Há unidade sem número');
+    const numeros = pedidas.map((u) => u.numero);
+    const repetidos = [...new Set(numeros.filter((n, i) => numeros.indexOf(n) !== i))];
+    if (repetidos.length) {
+      throw new BadRequestException(
+        `Numeração repetida na torre: ${repetidos.slice(0, 10).join(', ')}${repetidos.length > 10 ? '…' : ''}`,
+      );
+    }
+    if (dto.configuracao && JSON.stringify(dto.configuracao).length > 8000) {
+      throw new BadRequestException('Configuração da torre grande demais');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existentes = new Set(
+          (
+            await tx.unidade.findMany({
+              where: { empreendimentoId: emp.id, bloco, numero: { in: numeros } },
+              select: { numero: true },
+            })
+          ).map((u) => u.numero),
+        );
+        if (existentes.size && !dto.completar) {
+          const lista = [...existentes];
+          throw new ConflictException(
+            `Já existem ${lista.length} unidade(s) com esta numeração na torre: ${lista.slice(0, 10).join(', ')}${lista.length > 10 ? '…' : ''}. Para manter as existentes e criar só as que faltam, use "completar".`,
+          );
+        }
+        const novas = pedidas.filter((u) => !existentes.has(u.numero));
+        for (const u of novas) {
+          const un = await tx.unidade.create({
+            data: { empreendimentoId: emp.id, bloco, numero: u.numero, andar: u.andar, tipologia: u.tipologia },
+          });
+          await this.auditoria.registrar(
+            {
+              acao: 'UNIDADE_CADASTRADA',
+              descricao: `Unidade ${rotuloUnidade(un)} cadastrada em ${emp.nome}`,
+              entidade: 'Unidade',
+              entidadeId: un.id,
+              unidadeId: un.id,
+              etapa: un.etapa,
+              ator: ctx.ator,
+              statusNovo: rotuloEstado(un.etapa, un.status),
+              dados: { empreendimento: emp.codigo, bloco, numero: un.numero, andar: un.andar },
+            },
+            tx,
+          );
+        }
+        const pavimentos = new Set(novas.map((u) => u.andar)).size;
+        await this.auditoria.registrar(
+          {
+            acao: 'TORRE_MONTADA',
+            descricao: `Torre "${bloco}" de ${emp.nome}: ${novas.length} unidade(s) criada(s) em ${pavimentos} pavimento(s)${existentes.size ? `; ${existentes.size} já existiam e foram mantidas` : ''}`,
+            entidade: 'Empreendimento',
+            entidadeId: emp.id,
+            ator: ctx.ator,
+            dados: {
+              bloco,
+              criadas: novas.length,
+              jaExistiam: existentes.size,
+              configuracao: (dto.configuracao ?? null) as any,
+            },
+          },
+          tx,
+        );
+        return { criadas: novas.length, jaExistiam: existentes.size };
+      },
+      // uma torre grande são centenas de unidades, cada uma com o seu registro
+      { timeout: 120000, maxWait: 15000 },
+    );
+  }
+
   async atualizar(
     id: string,
     dto: { andar?: string; tipologia?: string; clienteId?: string | null },

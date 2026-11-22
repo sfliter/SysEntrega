@@ -45,9 +45,10 @@
 .demo-botao-ativo { background: var(--perigo); border-color: var(--perigo); color: #fff; }
 .demo-espaco { flex: 1; }
 .demo-abrindo { padding: 40px 16px; color: var(--tinta-2); }
-.demo-corpo .casca { min-height: calc(100vh - 54px); }
-.demo-corpo .lateral { height: calc(100vh - 54px); }
-.demo-corpo .entrada, .demo-corpo .publico { min-height: calc(100vh - 54px); }
+/* a faixa fica no alto e o sistema ocupa o resto da tela, com a sua própria rolagem */
+.demo-tela { display: flex; flex-direction: column; height: 100%; }
+.demo-barra { flex-shrink: 0; }
+.demo-corpo { flex: 1; min-height: 0; overflow: auto; }
 
 .roteiro { display: flex; flex-direction: column; gap: 10px; max-width: 68ch; }
 .roteiro h3 { font-size: 15px; margin-top: 10px; color: var(--marinho); }
@@ -84,8 +85,6 @@
 .papel-assinaturas img { max-height: 70px; align-self: flex-start; margin-top: 6px; }
 
 @media (max-width: 860px) {
-  .demo-corpo .casca, .demo-corpo .entrada, .demo-corpo .publico { min-height: 0; }
-  .demo-corpo .lateral { height: auto; }
   .demo-espaco, .demo-dica { display: none; }
 }
 .demo-dica { flex: 0 1 auto; min-width: 0; color: #c9d6ea; }

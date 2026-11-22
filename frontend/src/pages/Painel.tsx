@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import Abas, { useAba } from '../components/Abas';
+import Torre from '../components/Torre';
 import { api } from '../api';
 import { useAoVivo } from '../aoVivo';
 import { useAuth } from '../auth';
 import { Carregando, Erro, Pill, useCarregar, Vazio } from '../components/Basicos';
 import { useFila } from '../components/Conexao';
-import { dataHora, ESTACOES, ordemDaEtapa, STATUS } from '../fluxo';
+import { dataHora, ESTACOES, STATUS } from '../fluxo';
 import type { Etapa, StatusUnidade } from '../tipos';
 
 interface UnidadeDoPainel {
@@ -64,169 +66,186 @@ export default function Painel() {
   if (!dados) return <Erro>{erro}</Erro>;
 
   const construtora = usuario?.perfil === 'CONSTRUTORA';
+  return <Conteudo dados={dados} construtora={construtora} nome={usuario?.nome.split(' ')[0] ?? ''} aoVivo={conexao.online && !erro} atualizadoEm={atualizadoEm} />;
+}
+
+function Conteudo({
+  dados,
+  construtora,
+  nome,
+  aoVivo,
+  atualizadoEm,
+}: {
+  dados: Resumo;
+  construtora: boolean;
+  nome: string;
+  aoVivo: boolean;
+  atualizadoEm: Date;
+}) {
+  // Submenus da página: cada um cabe na tela, sem rolagem longa
+  const abas = [
+    { chave: 'geral', rotulo: 'Visão geral', selo: dados.fila.length, tom: 'atencao' },
+    { chave: 'torres', rotulo: 'Torres', selo: dados.pendenciasAbertas, tom: 'perigo' },
+    { chave: 'movimentacoes', rotulo: 'Movimentações' },
+  ];
+  const [aba, setAba] = useAba(abas);
+  const emps = dados.empreendimentos.map((e) => ({ chave: e.id, rotulo: e.nome, selo: e.pendenciasAbertas, tom: 'perigo' }));
+  // sem escolha, abre no empreendimento com mais unidades
+  const maior = [...dados.empreendimentos].sort((a, b) => b.total - a.total)[0]?.id;
+  const [empId, setEmpId] = useAba(emps, maior, 'emp');
+  const emp = dados.empreendimentos.find((e) => e.id === empId);
+
   return (
     <>
       <header className="pagina-topo">
         <div>
           <p className="etiqueta">Dashboard</p>
-          <h1>Olá, {usuario?.nome.split(' ')[0]}</h1>
-          <p className="suave">
-            {construtora
-              ? 'As unidades das suas obras, até serem recebidas pela incorporadora.'
-              : 'A situação de cada empreendimento e de cada unidade, da obra à entrega das chaves.'}
-          </p>
+          <h1>Olá, {nome}</h1>
         </div>
-        <p className={`ao-vivo ${conexao.online && !erro ? '' : 'ao-vivo-parado'}`} role="status">
+        <p className={`ao-vivo ${aoVivo ? '' : 'ao-vivo-parado'}`} role="status">
           <span className="faixa-ponto" />
-          {conexao.online && !erro ? 'Ao vivo' : 'Sem conexão'} · atualizado às {hora.format(atualizadoEm)}
+          {aoVivo ? 'Ao vivo' : 'Sem conexão'} · atualizado às {hora.format(atualizadoEm)}
         </p>
       </header>
+      <Abas abas={abas} atual={aba} aoMudar={setAba} rotulo="Seções do dashboard" />
 
-      {/* ---------- indicadores ---------- */}
-      <section className="indicadores" aria-label="Indicadores">
-        <Indicador rotulo="Em andamento" valor={dados.emAndamento} nota={`de ${dados.totalUnidades} unidades`} para="/unidades" />
-        <Indicador
-          rotulo="Com pendências"
-          valor={dados.pendenciasAbertas}
-          tom={dados.pendenciasAbertas ? 'perigo' : undefined}
-          nota={dados.pendenciasAbertas === 1 ? 'pendência em aberto' : 'pendências em aberto'}
-          para="/unidades?status=COM_PENDENCIAS"
-        />
-        <Indicador rotulo="Aguardando você" valor={dados.fila.length} tom={dados.fila.length ? 'atencao' : undefined} nota="ações na sua fila" />
-        {construtora ? (
-          <Indicador rotulo="Recebidas" valor={dados.recebidas ?? 0} tom="ok" nota="pela incorporadora" para="/unidades?status=RECEBIDA_INCORPORADORA" />
-        ) : (
-          <Indicador rotulo="Entregues" valor={dados.entregues} tom="ok" nota="chaves com o cliente" para="/unidades?status=ENTREGUE" />
-        )}
-      </section>
+      {aba === 'geral' && (
+        <>
+          <section className="indicadores" aria-label="Indicadores">
+            <Indicador rotulo="Em andamento" valor={dados.emAndamento} nota={`de ${dados.totalUnidades} unidades`} para="/unidades" />
+            <Indicador
+              rotulo="Com pendências"
+              valor={dados.pendenciasAbertas}
+              tom={dados.pendenciasAbertas ? 'perigo' : undefined}
+              nota={dados.pendenciasAbertas === 1 ? 'pendência em aberto' : 'pendências em aberto'}
+              para="/unidades?status=COM_PENDENCIAS"
+            />
+            <Indicador rotulo="Aguardando você" valor={dados.fila.length} tom={dados.fila.length ? 'atencao' : undefined} nota="ações na sua fila" />
+            {construtora ? (
+              <Indicador rotulo="Recebidas" valor={dados.recebidas ?? 0} tom="ok" nota="pela incorporadora" para="/unidades?status=RECEBIDA_INCORPORADORA" />
+            ) : (
+              <Indicador rotulo="Entregues" valor={dados.entregues} tom="ok" nota="chaves com o cliente" para="/unidades?status=ENTREGUE" />
+            )}
+          </section>
 
-      {/* ---------- por etapa ---------- */}
-      {!construtora && (
-        <section className="esteira" aria-label="Unidades por etapa">
-          {dados.etapas.map((e) => (
-            <div key={e.etapa} className="esteira-etapa">
-              <div className="esteira-cabeca">
-                <span className="esteira-estacao">{ESTACOES[e.ordem - 1]}</span>
-                <span className="esteira-seta" aria-hidden="true" />
-                <span className="esteira-estacao">{ESTACOES[e.ordem]}</span>
-              </div>
-              <Link to={`/unidades?etapa=${e.etapa}`} className="esteira-total">
-                <strong>{e.total}</strong>
-                <span>{e.total === 1 ? 'unidade' : 'unidades'}</span>
-              </Link>
-              <ul className="esteira-status">
-                {ORDEM_STATUS.map((s) => {
-                  const n = e.porStatus.find((p) => p.status === s)?.total ?? 0;
-                  if (!n) return null;
-                  return (
-                    <li key={s}>
-                      <Link to={`/unidades?etapa=${e.etapa}&status=${s}`}>
-                        <span className={`ponto ponto-${STATUS[s].tom}`} />
-                        {STATUS[s].rotulo}
-                        <b>{n}</b>
+          {!construtora && (
+            <section className="esteira" aria-label="Unidades por etapa">
+              {dados.etapas.map((e) => (
+                <div key={e.etapa} className="esteira-etapa">
+                  <div className="esteira-cabeca">
+                    <span className="esteira-estacao">{ESTACOES[e.ordem - 1]}</span>
+                    <span className="esteira-seta" aria-hidden="true" />
+                    <span className="esteira-estacao">{ESTACOES[e.ordem]}</span>
+                  </div>
+                  <Link to={`/unidades?etapa=${e.etapa}`} className="esteira-total">
+                    <strong>{e.total}</strong>
+                    <span>{e.total === 1 ? 'unidade' : 'unidades'}</span>
+                  </Link>
+                  <ul className="esteira-status">
+                    {ORDEM_STATUS.map((st) => {
+                      const n = e.porStatus.find((p) => p.status === st)?.total ?? 0;
+                      if (!n) return null;
+                      return (
+                        <li key={st}>
+                          <Link to={`/unidades?etapa=${e.etapa}&status=${st}`}>
+                            <span className={`ponto ponto-${STATUS[st].tom}`} />
+                            {STATUS[st].rotulo}
+                            <b>{n}</b>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                    {e.total === 0 && <li className="suave">Nenhuma unidade nesta etapa</li>}
+                  </ul>
+                </div>
+              ))}
+            </section>
+          )}
+
+          <div className="duas-colunas">
+            <section className="cartao">
+              <h2>Aguardando você</h2>
+              {dados.fila.length === 0 ? (
+                <Vazio>Nada parado com você agora.</Vazio>
+              ) : (
+                <ul className="lista lista-curta">
+                  {dados.fila.map((f, i) => (
+                    <li key={`${f.unidadeId}-${i}`}>
+                      <Link to={`/unidades/${f.unidadeId}`} className="lista-linha">
+                        <div>
+                          <strong>{f.acao}</strong>
+                          <span>
+                            {f.empreendimento} · {f.unidade}
+                          </span>
+                        </div>
+                        <time className="suave">desde {dataHora(f.desde)}</time>
                       </Link>
                     </li>
-                  );
-                })}
-                {e.total === 0 && <li className="suave">Nenhuma unidade nesta etapa</li>}
-              </ul>
-            </div>
-          ))}
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="cartao">
+              <h2>Próximas vistorias</h2>
+              {dados.proximosAgendamentos.length === 0 ? (
+                <Vazio>Nenhuma vistoria confirmada.</Vazio>
+              ) : (
+                <ul className="lista lista-curta">
+                  {dados.proximosAgendamentos.map((a) => (
+                    <li key={a.id}>
+                      <Link to={`/unidades/${a.unidadeId}`} className="lista-linha">
+                        <div>
+                          <strong>{dataHora(a.dataHora)}</strong>
+                          <span>
+                            {a.empreendimento} · {a.unidade}
+                            {a.local ? ` · ${a.local}` : ''}
+                          </span>
+                        </div>
+                        <Pill tom="andamento">{a.etapa === 'RELACIONAMENTO_CLIENTE' ? 'Com o cliente' : 'Técnica'}</Pill>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link to="/agenda" className="link">
+                Ver a agenda completa
+              </Link>
+            </section>
+          </div>
+        </>
+      )}
+
+      {aba === 'torres' && (
+        <section aria-label="Torres">
+          {dados.empreendimentos.length === 0 && <Vazio>Nenhum empreendimento com unidades cadastradas.</Vazio>}
+          {emps.length > 1 && <Abas abas={emps} atual={empId} aoMudar={setEmpId} rotulo="Empreendimento" classe="abas-secundarias" />}
+          {emp && <CartaoEmpreendimento emp={emp} construtora={construtora} />}
         </section>
       )}
 
-      {/* ---------- empreendimentos: o espelho das unidades ---------- */}
-      <section aria-label="Empreendimentos">
-        <div className="secao-topo">
-          <h2>Empreendimentos</h2>
-          <ul className="legenda" aria-label="Legenda das cores">
-            <li><span className="ponto ponto-neutro" />Aguardando liberação</li>
-            <li><span className="ponto ponto-atencao" />Aguardando ação</li>
-            <li><span className="ponto ponto-andamento" />Vistoria agendada ou em curso</li>
-            <li><span className="ponto ponto-perigo" />Com pendências</li>
-            <li><span className="ponto ponto-ok" />{construtora ? 'Recebida' : 'Entregue'}</li>
-          </ul>
-        </div>
-        {dados.empreendimentos.length === 0 && <Vazio>Nenhum empreendimento com unidades cadastradas.</Vazio>}
-        {dados.empreendimentos.map((emp) => (
-          <CartaoEmpreendimento key={emp.id} emp={emp} construtora={construtora} />
-        ))}
-      </section>
-
-      <div className="duas-colunas">
+      {aba === 'movimentacoes' && (
         <section className="cartao">
-          <h2>Aguardando você</h2>
-          {dados.fila.length === 0 ? (
-            <Vazio>Nada parado com você agora.</Vazio>
+          <h2>Últimas movimentações</h2>
+          {dados.movimentacoes.length === 0 ? (
+            <Vazio>Nenhuma movimentação registrada.</Vazio>
           ) : (
             <ul className="lista">
-              {dados.fila.map((f, i) => (
-                <li key={`${f.unidadeId}-${i}`}>
-                  <Link to={`/unidades/${f.unidadeId}`} className="lista-linha">
+              {dados.movimentacoes.map((m) => (
+                <li key={m.seq}>
+                  <Link to={m.unidadeId ? `/unidades/${m.unidadeId}` : '/unidades'} className="lista-linha lista-linha-topo">
                     <div>
-                      <strong>{f.acao}</strong>
-                      <span>
-                        {f.empreendimento} · {f.unidade}
-                      </span>
+                      <strong>{m.descricao}</strong>
+                      <span>{[m.empreendimento, m.unidade, m.quem].filter(Boolean).join(' · ')}</span>
                     </div>
-                    <time className="suave">desde {dataHora(f.desde)}</time>
+                    <time className="suave nao-quebra">{dataHora(m.criadoEm)}</time>
                   </Link>
                 </li>
               ))}
             </ul>
           )}
         </section>
-
-        <section className="cartao">
-          <h2>Próximas vistorias</h2>
-          {dados.proximosAgendamentos.length === 0 ? (
-            <Vazio>Nenhuma vistoria confirmada.</Vazio>
-          ) : (
-            <ul className="lista">
-              {dados.proximosAgendamentos.map((a) => (
-                <li key={a.id}>
-                  <Link to={`/unidades/${a.unidadeId}`} className="lista-linha">
-                    <div>
-                      <strong>{dataHora(a.dataHora)}</strong>
-                      <span>
-                        {a.empreendimento} · {a.unidade}
-                        {a.local ? ` · ${a.local}` : ''}
-                      </span>
-                    </div>
-                    <Pill tom="andamento">{a.etapa === 'RELACIONAMENTO_CLIENTE' ? 'Com o cliente' : 'Técnica'}</Pill>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link to="/agenda" className="link">
-            Ver a agenda completa
-          </Link>
-        </section>
-      </div>
-
-      <section className="cartao">
-        <h2>Últimas movimentações</h2>
-        {dados.movimentacoes.length === 0 ? (
-          <Vazio>Nenhuma movimentação registrada.</Vazio>
-        ) : (
-          <ul className="lista">
-            {dados.movimentacoes.map((m) => (
-              <li key={m.seq}>
-                <Link to={m.unidadeId ? `/unidades/${m.unidadeId}` : '/unidades'} className="lista-linha lista-linha-topo">
-                  <div>
-                    <strong>{m.descricao}</strong>
-                    <span>
-                      {[m.empreendimento, m.unidade, m.quem].filter(Boolean).join(' · ')}
-                    </span>
-                  </div>
-                  <time className="suave nao-quebra">{dataHora(m.criadoEm)}</time>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      )}
     </>
   );
 }
@@ -248,25 +267,13 @@ function Indicador({ rotulo, valor, nota, tom, para }: { rotulo: string; valor: 
   );
 }
 
-// Um empreendimento: a barra de avanço por etapa e o "espelho" — cada
-// unidade um quadrinho na cor da sua situação, agrupado por bloco e andar.
+// Um empreendimento: a barra de avanço por etapa e as torres desenhadas,
+// cada unidade na cor da sua situação.
 function CartaoEmpreendimento({ emp, construtora }: { emp: Empreendimento; construtora: boolean }) {
-  const blocos = useMemo(() => {
-    const porBloco = new Map<string, Map<string, UnidadeDoPainel[]>>();
-    for (const un of emp.unidades) {
-      const andares = porBloco.get(un.bloco) ?? new Map<string, UnidadeDoPainel[]>();
-      const chave = un.andar ?? '';
-      andares.set(chave, [...(andares.get(chave) ?? []), un]);
-      porBloco.set(un.bloco, andares);
-    }
-    const numero = (a: string) => (a === '' ? -Infinity : Number.parseFloat(a) || 0);
-    return [...porBloco.entries()].map(([bloco, andares]) => ({
-      bloco,
-      // do andar mais alto para o mais baixo, como no prédio
-      andares: [...andares.entries()]
-        .sort(([a], [b]) => numero(b) - numero(a))
-        .map(([andar, unidades]) => ({ andar, unidades: unidades.sort((a, b) => a.numero.localeCompare(b.numero, 'pt-BR', { numeric: true })) })),
-    }));
+  const torres = useMemo(() => {
+    const porBloco = new Map<string, UnidadeDoPainel[]>();
+    for (const un of emp.unidades) porBloco.set(un.bloco, [...(porBloco.get(un.bloco) ?? []), un]);
+    return [...porBloco.entries()].sort(([a], [b]) => a.localeCompare(b, 'pt-BR', { numeric: true }));
   }, [emp.unidades]);
   const rotuloFim = construtora ? 'Recebidas' : 'Entregues';
 
@@ -274,7 +281,7 @@ function CartaoEmpreendimento({ emp, construtora }: { emp: Empreendimento; const
     <article className="cartao emp">
       <header className="emp-topo">
         <div>
-          <h3>{emp.nome}</h3>
+          <h2>{emp.nome}</h2>
           <p className="suave">
             Código {emp.codigo} · {emp.construtora} · {emp.total} {emp.total === 1 ? 'unidade' : 'unidades'}
           </p>
@@ -310,35 +317,19 @@ function CartaoEmpreendimento({ emp, construtora }: { emp: Empreendimento; const
         </li>
       </ul>
 
-      {blocos.map(({ bloco, andares }) => (
-        <div key={bloco} className="espelho">
-          {bloco && <p className="etiqueta">{bloco}</p>}
-          {andares.map(({ andar, unidades }) => (
-            <div key={andar} className="espelho-andar">
-              <span className="espelho-rotulo">{andar ? `${andar}º` : ''}</span>
-              <div className="espelho-unidades">
-                {unidades.map((un) => {
-                  const situacao = STATUS[un.status];
-                  const etapa = ordemDaEtapa(un.etapa);
-                  const descricao = `${bloco ? `${bloco} · ` : ''}${un.numero} — ${
-                    un.status === 'ENTREGUE' || un.status === 'RECEBIDA_INCORPORADORA' ? '' : `etapa ${etapa}, `
-                  }${situacao.rotulo.toLowerCase()}`;
-                  return (
-                    <Link key={un.id} to={`/unidades/${un.id}`} className={`unidade-celula celula-${situacao.tom}`} title={descricao} aria-label={descricao}>
-                      <strong>
-                        {un.numero}
-                        {/* em que etapa a unidade está (a construtora só tem a primeira) */}
-                        {!construtora && un.status !== 'ENTREGUE' && <i>E{etapa}</i>}
-                      </strong>
-                      <span>{situacao.curto}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
+      <ul className="legenda" aria-label="Legenda das cores">
+        <li><span className="ponto ponto-neutro" />Aguardando liberação</li>
+        <li><span className="ponto ponto-atencao" />Aguardando ação</li>
+        <li><span className="ponto ponto-andamento" />Vistoria agendada ou em curso</li>
+        <li><span className="ponto ponto-perigo" />Com pendências</li>
+        <li><span className="ponto ponto-ok" />{construtora ? 'Recebida' : 'Entregue'}</li>
+      </ul>
+
+      <div className="torres">
+        {torres.map(([bloco, unidades]) => (
+          <Torre key={bloco} nome={bloco} unidades={unidades} mostrarEtapa={!construtora} />
+        ))}
+      </div>
     </article>
   );
 }

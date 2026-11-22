@@ -1,7 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { abrirPdf, api, DEMO, mensagemDeErro } from '../api';
 import { useAoVivo } from '../aoVivo';
+import Abas from '../components/Abas';
 import { Carregando, Erro, Modal, Pill, PillStatus, useAcao, useCarregar, Vazio } from '../components/Basicos';
 import CampoAssinatura, { obterLocalizacao } from '../components/CampoAssinatura';
 import Historico from '../components/Historico';
@@ -36,6 +37,7 @@ export default function UnidadeDetalhe() {
   const navegar = useNavigate();
   const [modal, setModal] = useState<ModalAberto>(null);
   const [versao, setVersao] = useState(0);
+  const [params, setParams] = useSearchParams();
   const acao = useAcao();
   const { dados, erro, carregando, recarregar } = useCarregar<DetalheUnidade>(
     async () => (await api.get(`/unidades/${id}`)).data,
@@ -70,6 +72,26 @@ export default function UnidadeDetalhe() {
   const termoAberto = dados.documentos.find((d) => d.etapa === unidade.etapa && d.envelope?.status === 'PENDENTE');
   const pendenciasDaEtapa = dados.pendencias.filter((p) => p.etapa === unidade.etapa);
   const abertas = pendenciasDaEtapa.filter((p) => p.status === 'ABERTA');
+
+  // Submenus da unidade. Sem escolha do usuário, abre no que pede atenção.
+  const abas = [
+    ...(pendenciasDaEtapa.length ? [{ chave: 'pendencias', rotulo: 'Pendências', selo: abertas.length, tom: 'perigo' }] : []),
+    { chave: 'termos', rotulo: 'Termos e assinaturas', selo: dados.documentos.length },
+    { chave: 'vistorias', rotulo: 'Vistorias e agenda', selo: dados.vistorias.length },
+    { chave: 'historico', rotulo: 'Histórico' },
+  ];
+  const padrao =
+    unidade.status === 'COM_PENDENCIAS' && pendenciasDaEtapa.length
+      ? 'pendencias'
+      : termoAberto || unidade.status === 'ENTREGUE' || unidade.status === 'RECEBIDA_INCORPORADORA'
+        ? 'termos'
+        : 'historico';
+  const aba = abas.find((a) => a.chave === params.get('aba'))?.chave ?? padrao;
+  const setAba = (chave: string) => {
+    const novo = new URLSearchParams(params);
+    novo.set('aba', chave);
+    setParams(novo, { replace: true });
+  };
 
   async function iniciarVistoria() {
     let nova: { id: string } | undefined;
@@ -277,8 +299,10 @@ export default function UnidadeDetalhe() {
         )}
       </section>
 
+      <Abas abas={abas} atual={aba} aoMudar={setAba} rotulo="Seções da unidade" />
+
       {/* ---------- pendências ---------- */}
-      {pendenciasDaEtapa.length > 0 && (
+      {aba === 'pendencias' && pendenciasDaEtapa.length > 0 && (
         <section className="cartao">
           <h2>Pendências desta etapa</h2>
           <ul className="lista">
@@ -310,15 +334,18 @@ export default function UnidadeDetalhe() {
       )}
 
       {/* ---------- termos ---------- */}
-      <section className="cartao">
-        <h2>Termos e assinaturas</h2>
-        {dados.documentos.length === 0 ? (
-          <Vazio>O termo é emitido quando a vistoria é aprovada.</Vazio>
-        ) : (
-          dados.documentos.map((d) => <Termo key={d.id} d={d} abrir={setModal} aoMudar={atualizar} />)
-        )}
-      </section>
+      {aba === 'termos' && (
+        <section className="cartao">
+          <h2>Termos e assinaturas</h2>
+          {dados.documentos.length === 0 ? (
+            <Vazio>O termo é emitido quando a vistoria é aprovada.</Vazio>
+          ) : (
+            dados.documentos.map((d) => <Termo key={d.id} d={d} abrir={setModal} aoMudar={atualizar} />)
+          )}
+        </section>
+      )}
 
+      {aba === 'vistorias' && (
       <div className="duas-colunas">
         {/* ---------- vistorias ---------- */}
         <section className="cartao">
@@ -413,12 +440,15 @@ export default function UnidadeDetalhe() {
           )}
         </section>
       </div>
+      )}
 
-      <section className="cartao">
-        <h2>Histórico da unidade</h2>
-        {permissoes.anotar && <Anotar unidadeId={unidade.id} aoSalvar={() => setVersao((v) => v + 1)} />}
-        <Historico unidadeId={unidade.id} versao={versao} />
-      </section>
+      {aba === 'historico' && (
+        <section className="cartao">
+          <h2>Histórico da unidade</h2>
+          {permissoes.anotar && <Anotar unidadeId={unidade.id} aoSalvar={() => setVersao((v) => v + 1)} />}
+          <Historico unidadeId={unidade.id} versao={versao} />
+        </section>
+      )}
 
       {/* ---------- modais ---------- */}
       {modal?.tipo === 'liberar' && (
@@ -956,7 +986,7 @@ function ModalCliente({
         <Carregando />
       ) : !dados?.length ? (
         <Vazio>
-          Nenhum cliente encontrado. Cadastre em <Link to="/cadastros?aba=clientes">Cadastros → Clientes</Link>.
+          Nenhum cliente encontrado. Cadastre em <Link to="/cadastros?aba=clientes">Configuração → Clientes</Link>.
         </Vazio>
       ) : (
         <ul className="lista lista-rolavel">

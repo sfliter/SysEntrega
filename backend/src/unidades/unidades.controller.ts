@@ -14,14 +14,18 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Contexto, Ctx } from '../comum/contexto';
 import { ETAPAS, RECEBIDA_INCORPORADORA, ROTULO_STATUS_VISIVEL } from '../comum/fluxo';
@@ -53,6 +57,39 @@ class CriarUnidadesDto {
   @IsString()
   @MaxLength(80)
   tipologia?: string;
+}
+
+class UnidadeDaTorreDto {
+  @IsString() @MinLength(1) @MaxLength(20) numero: string;
+  @IsOptional() @IsString() @MaxLength(20) andar?: string;
+  @IsOptional() @IsString() @MaxLength(80) tipologia?: string;
+}
+
+class MontarTorreDto {
+  @IsString()
+  empreendimentoId: string;
+
+  @IsString()
+  @MinLength(1, { message: 'Informe o nome da torre' })
+  @MaxLength(40)
+  bloco: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1500, { message: 'No máximo 1.500 unidades por torre de cada vez' })
+  @ValidateNested({ each: true })
+  @Type(() => UnidadeDaTorreDto)
+  unidades: UnidadeDaTorreDto[];
+
+  // As faixas de pavimentos usadas para gerar a torre: ficam na auditoria
+  @IsOptional()
+  @IsObject()
+  configuracao?: Record<string, unknown>;
+
+  // Mantém as unidades que já existem e cria só as que faltam
+  @IsOptional()
+  @IsBoolean()
+  completar?: boolean;
 }
 
 class AtualizarUnidadeDto {
@@ -140,6 +177,12 @@ export class UnidadesController {
   @Post('unidades')
   criar(@Body() dto: CriarUnidadesDto, @Ctx() ctx: Contexto) {
     return this.unidades.criar(dto, ctx);
+  }
+
+  // Monta ou completa uma torre (várias unidades de um bloco de uma vez)
+  @Post('unidades/lote')
+  montarTorre(@Body() dto: MontarTorreDto, @Ctx() ctx: Contexto) {
+    return this.unidades.criarLote(dto, ctx);
   }
 
   @Get('unidades/:id')
