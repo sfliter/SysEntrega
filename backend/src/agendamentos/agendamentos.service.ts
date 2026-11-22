@@ -14,6 +14,7 @@ import {
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { Ator, Contexto, UsuarioLogado } from '../comum/contexto';
 import { ETAPAS, etapasVisiveis } from '../comum/fluxo';
+import { NotificacoesService } from '../comum/notificacoes.service';
 import * as regras from '../comum/regras';
 import { dataHoraBR, nomeAbreviado, tokenAleatorio } from '../comum/util';
 import { PrismaService, Tx } from '../prisma/prisma.service';
@@ -33,6 +34,7 @@ export class AgendamentosService {
     private prisma: PrismaService,
     private auditoria: AuditoriaService,
     private unidades: UnidadesService,
+    private notificacoes: NotificacoesService,
   ) {}
 
   private minimoDeOpcoes() {
@@ -107,11 +109,23 @@ export class AgendamentosService {
     return agendamento;
   }
 
-  propor(unidadeId: string, dto: PropostaDto, ctx: Contexto) {
-    return this.prisma.$transaction(async (tx) => {
+  // Entre empresas, quem escolhe o horário é a outra parte: ela é avisada
+  private avisarProposta(ag: { unidadeId: string; etapa: Etapa; propostoPorPerfil: Perfil }) {
+    const cfg = ETAPAS[ag.etapa];
+    if (cfg.recebedor === null) return;
+    const outros = [cfg.cedente, cfg.recebedor].filter((p) => p !== ag.propostoPorPerfil);
+    this.notificacoes
+      .avisar(ag.unidadeId, ag.etapa, outros, 'Horários de vistoria oferecidos', 'Foram oferecidos horários para a vistoria. Escolha um deles para confirmar.')
+      .catch(() => undefined);
+  }
+
+  async propor(unidadeId: string, dto: PropostaDto, ctx: Contexto) {
+    const ag = await this.prisma.$transaction(async (tx) => {
       await this.unidades.travar(unidadeId, tx);
       return this.criarProposta(tx, unidadeId, dto, ctx);
     });
+    this.avisarProposta(ag);
+    return ag;
   }
 
   private async aplicarConfirmacao(
@@ -267,8 +281,8 @@ export class AgendamentosService {
   }
 
   // Cancela o agendamento atual e oferece novos horários, de uma vez
-  reagendar(id: string, dto: PropostaDto & { motivo: string }, ctx: Contexto) {
-    return this.prisma.$transaction(async (tx) => {
+  async reagendar(id: string, dto: PropostaDto & { motivo: string }, ctx: Contexto) {
+    const novo = await this.prisma.$transaction(async (tx) => {
       const ag = await tx.agendamento.findUnique({ where: { id } });
       if (!ag) throw new NotFoundException('Agendamento não encontrado');
       await this.unidades.travar(ag.unidadeId, tx);
@@ -277,6 +291,8 @@ export class AgendamentosService {
       await this.aplicarCancelamento(tx, id, `Reagendamento: ${dto.motivo}`, ctx.ator);
       return this.criarProposta(tx, ag.unidadeId, dto, ctx);
     });
+    this.avisarProposta(novo);
+    return novo;
   }
 
   async agenda(

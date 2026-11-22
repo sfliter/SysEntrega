@@ -58,11 +58,19 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # 1 = avisa por e-mail quem precisa agir a cada mudança de situação
+      NOTIFICAR_POR_EMAIL: ${NOTIFICAR_POR_EMAIL:-}
     volumes:
       - dados_arquivos:/dados/armazenamento
     # Sem porta publicada: quem fala com a API é o nginx do frontend
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/saude').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build: ./frontend

@@ -12,6 +12,8 @@ async function bootstrap() {
   // de proxies na frente da API (o nginx conta 1) — é o que faz o IP gravado
   // na auditoria e nas assinaturas ser o de quem agiu de verdade.
   app.set('trust proxy', Number(process.env.PROXIES_CONFIAVEIS) || 1);
+  // Ao parar o container, termina as requisições em curso e fecha o banco
+  app.enableShutdownHooks();
   app.setGlobalPrefix('api');
   app.useBodyParser('json', { limit: '2mb' });
   app.useGlobalPipes(

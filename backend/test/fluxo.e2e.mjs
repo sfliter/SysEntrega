@@ -10,12 +10,14 @@
 import { spawn } from 'node:child_process';
 import { createHash, createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
+import { createServer as criarServidorTcp } from 'node:net';
 import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
 
 const SENHA = process.env.SEED_SENHA_PADRAO || 'Mudar@123';
 const PORTA = 3900;
 const PORTA_SIGNER = 3901;
+const PORTA_SMTP = 3902;
 const API = `http://127.0.0.1:${PORTA}/api`;
 const SEGREDO_WEBHOOK = 'segredo-de-teste-do-webhook';
 const PNG_1X1 = Buffer.from(
@@ -194,6 +196,12 @@ async function fluxoCompleto(prisma) {
     const fotos = new FormData();
     fotos.append('fotos', new Blob([PNG_1X1], { type: 'image/png' }), 'piso.png');
     const [foto] = await exigir(201, 'POST', `/vistorias/${v1.vistoria.id}/itens/${itemRuim.id}/fotos`, { token: incorp, corpo: fotos });
+    const repetida = new FormData();
+    repetida.append('fotos', new Blob([PNG_1X1], { type: 'image/png' }), 'piso.png');
+    const [mesma] = await exigir(201, 'POST', `/vistorias/${v1.vistoria.id}/itens/${itemRuim.id}/fotos`, { token: incorp, corpo: repetida });
+    assert.equal(mesma.id, foto.id, 'reenvio da mesma foto devolve a que já existe');
+    const itensV1 = (await exigir(200, 'GET', `/vistorias/${v1.vistoria.id}`, { token: incorp })).itens;
+    assert.equal(itensV1.find((i) => i.id === itemRuim.id).fotos.length, 1);
     const falsa = new FormData();
     falsa.append('fotos', new Blob(['<script>alert(1)</script>'], { type: 'image/png' }), 'x.png');
     await exigir(400, 'POST', `/vistorias/${v1.vistoria.id}/itens/${itemRuim.id}/fotos`, { token: incorp, corpo: falsa });
@@ -205,7 +213,7 @@ async function fluxoCompleto(prisma) {
     let d = await estado(un.id, construtora);
     assert.equal(d.onde, 'CONSTRUTORA_INCORPORADORA/COM_PENDENCIAS');
     assert.equal(d.pendencias.length, 1);
-    ok('vistoria reprovada vira pendência; foto conferida pelo conteúdo e protegida por escopo');
+    ok('vistoria reprovada vira pendência; foto conferida pelo conteúdo, protegida por escopo e sem duplicar no reenvio');
 
     await exigir(400, 'POST', `/unidades/${un.id}/liberar`, { token: construtora, corpo: {} });
     await exigir(403, 'POST', `/pendencias/${d.pendencias[0].id}/resolver`, { token: incorp, corpo: { resolucao: 'tentativa indevida' } });
@@ -342,6 +350,18 @@ async function fluxoCompleto(prisma) {
     assert.equal(histConstrutora.every((e) => !e.etapa || e.etapa === 'CONSTRUTORA_INCORPORADORA'), true);
     ok(`histórico da unidade com ${hist.length} eventos; a construtora só vê os da etapa dela`);
 
+    await exigir(201, 'POST', `/unidades/${un.id}/anotacoes`, { token: relac, corpo: { texto: 'Cliente pediu segunda via do manual.' } });
+    await exigir(403, 'POST', `/unidades/${un.id}/anotacoes`, { token: construtora, corpo: { texto: 'Etapa encerrada para a construtora.' } });
+    await exigir(403, 'POST', `/unidades/${un.id}/anotacoes`, { token: auditor, corpo: { texto: 'Auditor não escreve.' } });
+    const comAnotacao = await exigir(200, 'GET', `/unidades/${un.id}/historico`, { token: relac });
+    assert.ok(comAnotacao.some((e) => e.acao === 'ANOTACAO' && /segunda via/.test(e.descricao)));
+    hist.push(comAnotacao.at(-1));
+    const planilha = (await exigir(200, 'GET', '/unidades/exportar.csv?busca=' + numero, { token: incorp })).toString();
+    assert.ok(planilha.includes(numero) && planilha.includes('Entregue ao cliente'));
+    assert.equal((await exigir(200, 'GET', '/unidades/exportar.csv', { token: outra })).toString().includes(numero), false);
+    assert.equal((await exigir(200, 'GET', '/saude')).ok, true);
+    ok('anotações entram no histórico (só de quem participa da etapa); planilha de unidades respeita o escopo; /saude responde');
+
     await exigir(403, 'GET', '/auditoria', { token: construtora });
     await exigir(403, 'GET', '/auditoria', { token: relac });
     const trilha = await exigir(200, 'GET', `/auditoria?unidadeId=${un.id}&porPagina=5`, { token: auditor });
@@ -434,6 +454,7 @@ async function fluxoCompleto(prisma) {
 function subirRsfSignerFalso() {
   const pdfAssinado = Buffer.from('%PDF-1.4\n% assinado pelo rsf-signer de teste\n%%EOF\n');
   const recebidos = [];
+  const ids = [];
   const servidor = createServer((req, res) => {
     const partes = [];
     req.on('data', (b) => partes.push(b));
@@ -447,7 +468,7 @@ function subirRsfSignerFalso() {
         const corpo = JSON.parse(Buffer.concat(partes).toString());
         recebidos.push(corpo);
         return responder(201, {
-          id: `env_${recebidos.length}`,
+          id: (ids.push(`env_${Date.now()}_${recebidos.length}`), ids.at(-1)),
           status: 'PENDENTE',
           signatarios: corpo.signatarios.map((s, i) => ({
             referencia: s.referencia, id: `sig_${i}`, urlAssinatura: `https://signer.exemplo/assinar/${s.referencia}`,
@@ -460,7 +481,7 @@ function subirRsfSignerFalso() {
   });
   return new Promise((resolve) =>
     servidor.listen(PORTA_SIGNER, '127.0.0.1', () =>
-      resolve({ recebidos, pdfAssinado, parar: () => new Promise((r) => servidor.close(r)) }),
+      resolve({ recebidos, ids, pdfAssinado, parar: () => new Promise((r) => servidor.close(r)) }),
     ),
   );
 }
@@ -510,7 +531,7 @@ async function fluxoRsfSigner() {
     };
     const assinou = (s, nome) => ({
       evento: 'signatario.assinou',
-      envelopeId: 'env_1',
+      envelopeId: signer.ids.at(-1),
       signatario: { referencia: s.id, nome, assinadoEm: new Date().toISOString(), ip: '203.0.113.9' },
     });
     assert.equal((await webhook(assinou(env.signatarios[0], 'Carlos Construtor'), 'segredo-errado')).status, 403);
@@ -539,10 +560,127 @@ async function fluxoRsfSigner() {
   }
 }
 
+// ---------- 3ª parte: e-mail (servidor SMTP de mentira) ----------
+
+function subirSmtpFalso() {
+  const mensagens = [];
+  const servidor = criarServidorTcp((socket) => {
+    let emDados = false;
+    let corpo = '';
+    let para = [];
+    socket.write('220 smtp.teste ESMTP\r\n');
+    socket.on('data', (pedaco) => {
+      for (const linha of pedaco.toString().split(/(?<=\r\n)/)) {
+        if (emDados) {
+          corpo += linha;
+          if (corpo.endsWith('\r\n.\r\n')) {
+            mensagens.push({ para, corpo });
+            emDados = false; corpo = ''; para = [];
+            socket.write('250 OK\r\n');
+          }
+          continue;
+        }
+        const comando = linha.trim().toUpperCase();
+        if (comando.startsWith('EHLO') || comando.startsWith('HELO')) socket.write('250 smtp.teste\r\n');
+        else if (comando.startsWith('RCPT TO')) { para.push(linha.match(/<(.+)>/)?.[1]); socket.write('250 OK\r\n'); }
+        else if (comando === 'DATA') { emDados = true; socket.write('354 Envie\r\n'); }
+        else if (comando === 'QUIT') { socket.write('221 Tchau\r\n'); socket.end(); }
+        else if (comando) socket.write('250 OK\r\n');
+      }
+    });
+    socket.on('error', () => undefined);
+  });
+  return new Promise((resolve) =>
+    servidor.listen(PORTA_SMTP, '127.0.0.1', () =>
+      resolve({ mensagens, parar: () => new Promise((r) => servidor.close(r)) }),
+    ),
+  );
+}
+
+// Corpo de e-mail em texto: desfaz o quoted-printable para poder procurar nele
+const texto = (m) => m.corpo.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+const esperar = async (condicao, ms = 6000) => {
+  for (const fim = Date.now() + ms; Date.now() < fim; ) {
+    if (condicao()) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+};
+
+async function fluxoEmail(prisma) {
+  console.log('\nE-mail de verdade (servidor SMTP simulado): código do cliente e avisos');
+  const smtp = await subirSmtpFalso();
+  const api = await subirApi({
+    ASSINATURA_PROVEDOR: 'interno',
+    CODIGO_NO_LOG: '',
+    SMTP_HOST: '127.0.0.1',
+    SMTP_PORT: String(PORTA_SMTP),
+    SMTP_FROM: 'sysentrega@teste.local',
+    NOTIFICAR_POR_EMAIL: '1',
+  });
+  try {
+    const [construtora, incorp, relac] = await Promise.all(
+      ['construtora@exemplo.com', 'incorporadora@exemplo.com', 'relacionamento@exemplo.com'].map(entrar),
+    );
+    const emp = (await exigir(200, 'GET', '/empreendimentos', { token: incorp })).find((e) => e.codigo === '01');
+    const numero = `M${Date.now().toString().slice(-7)}`;
+    const [un] = await exigir(201, 'POST', '/unidades', { token: incorp, corpo: { empreendimentoId: emp.id, bloco: 'Teste', numeros: [numero] } });
+
+    await exigir(201, 'POST', `/unidades/${un.id}/liberar`, { token: construtora, corpo: {} });
+    assert.ok(await esperar(() => smtp.mensagens.some((m) => texto(m).includes(numero) && texto(m).includes('Falta combinar'))), 'aviso de liberação não chegou');
+    // Na etapa 1 as duas partes podem oferecer horários: as duas são avisadas
+    const avisados = smtp.mensagens.filter((m) => texto(m).includes(numero)).flatMap((m) => m.para);
+    assert.ok(avisados.includes('construtora@exemplo.com') && avisados.includes('incorporadora@exemplo.com'));
+    assert.equal(avisados.includes('relacionamento@exemplo.com'), false, 'quem não participa da etapa não é avisado');
+    assert.equal(smtp.mensagens.some((m) => m.para.includes('outra.construtora@exemplo.com')), false, 'outra construtora não recebe avisos');
+    ok('mudança de situação avisa por e-mail quem precisa agir, sem vazar para outra construtora');
+
+    // Leva a unidade até a assinatura do cliente
+    await agendarEntreEmpresas(un.id, construtora, incorp);
+    await (await vistoriar(un.id, incorp, {}, { acompanhante: 'Eng. José' })).concluir();
+    let d = await estado(un.id, incorp);
+    for (const s of d.documentos[0].envelope.signatarios) {
+      await exigir(200, 'POST', `/signatarios/${s.id}/assinar`, { token: s.parte === 'CONSTRUTORA' ? construtora : incorp, corpo: { senha: SENHA } });
+    }
+    await exigir(201, 'POST', `/unidades/${un.id}/liberar`, { token: incorp, corpo: {} });
+    await (await vistoriar(un.id, relac)).concluir();
+    d = await estado(un.id, relac);
+    for (const s of d.documentos[0].envelope.signatarios) {
+      await exigir(200, 'POST', `/signatarios/${s.id}/assinar`, { token: s.parte === 'INCORPORADORA' ? incorp : relac, corpo: { senha: SENHA } });
+    }
+    const emailCliente = `cliente${Date.now()}@teste.local`;
+    const cliente = await exigir(201, 'POST', '/clientes', { token: relac, corpo: { nome: 'Ana Beatriz Costa', cpfCnpj: cpfAleatorio(), email: emailCliente } });
+    await exigir(200, 'PATCH', `/unidades/${un.id}`, { token: relac, corpo: { clienteId: cliente.id } });
+    const ag = await exigir(201, 'POST', `/unidades/${un.id}/agendamentos`, { token: relac, corpo: { opcoes: [emHoras(24)] } });
+    await exigir(200, 'POST', `/publico/agendamento/${ag.tokenCliente}/confirmar`, { corpo: { opcaoId: ag.opcoes[0].id } });
+    await (await vistoriar(un.id, relac)).concluir();
+    d = await estado(un.id, relac);
+    const sigCliente = d.documentos[0].envelope.signatarios.find((s) => s.parte === 'CLIENTE');
+
+    assert.ok(await esperar(() => smtp.mensagens.some((m) => m.para.includes(emailCliente) && texto(m).includes(`/assinar/${sigCliente.token}`))), 'link de assinatura não chegou ao cliente');
+    const link = `/publico/assinatura/${sigCliente.token}`;
+    const envio = await exigir(200, 'POST', `${link}/codigo`);
+    assert.equal(envio.ensaio, false);
+    assert.ok(await esperar(() => smtp.mensagens.some((m) => m.para.includes(emailCliente) && /\s\d{6}\s/.test(texto(m)) && texto(m).includes('para assinar o termo'))));
+    const codigo = texto(smtp.mensagens.findLast((m) => m.para.includes(emailCliente) && texto(m).includes('para assinar o termo'))).match(/\s(\d{6})\s/)[1];
+    assert.equal(api.log().includes(codigo), false, 'com e-mail configurado o código não vai para o log');
+    await exigir(200, 'POST', `/signatarios/${d.documentos[0].envelope.signatarios.find((s) => s.parte === 'RELACIONAMENTO').id}/assinar`, { token: relac, corpo: { senha: SENHA } });
+    await exigir(200, 'POST', `${link}/assinar`, { corpo: { codigo, assinaturaImagem: RUBRICA } });
+    assert.equal((await estado(un.id, relac)).onde, 'RELACIONAMENTO_CLIENTE/ENTREGUE');
+    const noBanco = await prisma.signatario.findUnique({ where: { id: sigCliente.id } });
+    assert.equal(noBanco.codigoCanal, 'email');
+    ok('cliente recebe o link e o código por e-mail e assina; o código não aparece no log do servidor');
+  } finally {
+    await api.parar();
+    await smtp.parar();
+  }
+}
+
 const prisma = new PrismaClient();
 try {
   await fluxoCompleto(prisma);
   await fluxoRsfSigner();
+  await fluxoEmail(prisma);
   console.log(`\n${passos} verificações passaram.\n`);
 } catch (erro) {
   console.error('\nFALHOU:', erro.message, '\n');

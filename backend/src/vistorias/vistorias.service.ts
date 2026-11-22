@@ -212,7 +212,11 @@ export class VistoriasService {
     });
     if (!item) throw new NotFoundException('Item não encontrado');
     if (!arquivos?.length) throw new BadRequestException('Nenhuma foto enviada');
-    if (item._count.fotos + arquivos.length > MAX_FOTOS_POR_ITEM) {
+    const hashes = arquivos.map((a) => sha256(a.buffer));
+    const jaGravadas = await this.prisma.foto.count({
+      where: { vistoriaItemId: itemId, sha256: { in: hashes } },
+    });
+    if (item._count.fotos + arquivos.length - jaGravadas > MAX_FOTOS_POR_ITEM) {
       throw new BadRequestException(`Limite de ${MAX_FOTOS_POR_ITEM} fotos por item`);
     }
     const tipos = arquivos.map((a) => tipoDaImagem(a.buffer));
@@ -224,8 +228,18 @@ export class VistoriasService {
     for (let i = 0; i < arquivos.length; i++) {
       const arquivo = arquivos[i];
       const tipo = tipos[i]!;
-      const chave = await this.armazenamento.salvar('fotos', tipo.ext, arquivo.buffer);
       const hash = sha256(arquivo.buffer);
+      // O celular reenvia a foto quando não sabe se o envio anterior chegou
+      // (sinal caiu no meio). A mesma foto no mesmo item não é gravada de novo.
+      const repetida = await this.prisma.foto.findFirst({
+        where: { vistoriaItemId: itemId, sha256: hash },
+        select: { id: true, nomeOriginal: true, tamanho: true, criadoEm: true },
+      });
+      if (repetida) {
+        criadas.push(repetida);
+        continue;
+      }
+      const chave = await this.armazenamento.salvar('fotos', tipo.ext, arquivo.buffer);
       const foto = await this.prisma.$transaction(async (tx) => {
         const f = await tx.foto.create({
           data: {

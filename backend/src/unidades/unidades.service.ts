@@ -14,6 +14,7 @@ import {
   Unidade,
 } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { NotificacoesService } from '../comum/notificacoes.service';
 import { Ator, Contexto, UsuarioLogado } from '../comum/contexto';
 import {
   ETAPAS,
@@ -34,6 +35,7 @@ export class UnidadesService {
   constructor(
     private prisma: PrismaService,
     private auditoria: AuditoriaService,
+    private notificacoes: NotificacoesService,
   ) {}
 
   // A construtora só vê as unidades das obras dela
@@ -108,6 +110,7 @@ export class UnidadesService {
       },
       tx,
     );
+    this.notificacoes.aoMudarEstado(unidade.id, etapa, novo.status);
     return atualizada;
   }
 
@@ -309,6 +312,26 @@ export class UnidadesService {
       statusAnterior: e.statusAnterior,
       statusNovo: e.statusNovo,
     }));
+  }
+
+  // Anotação livre no histórico da unidade (combinados, ocorrências, avisos).
+  // Vai para a trilha de auditoria: não pode ser editada nem apagada.
+  async anotar(id: string, texto: string, ctx: Contexto) {
+    const unidade = await this.obter(id, ctx.usuario);
+    this.exigir(
+      etapasVisiveis(ctx.usuario.perfil).includes(unidade.etapa),
+      'A unidade já passou da etapa em que a sua empresa participa',
+    );
+    await this.auditoria.registrar({
+      acao: 'ANOTACAO',
+      descricao: texto,
+      entidade: 'Unidade',
+      entidadeId: id,
+      unidadeId: id,
+      etapa: unidade.etapa,
+      ator: ctx.ator,
+    });
+    return { ok: true };
   }
 
   async criar(

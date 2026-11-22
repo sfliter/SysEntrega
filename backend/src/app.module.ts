@@ -17,6 +17,8 @@ import { AuthService } from './auth/auth.service';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
 import { LimiteGuard } from './auth/limite.guard';
 import { CadastrosController } from './cadastros/cadastros.controller';
+import { NotificacoesService } from './comum/notificacoes.service';
+import { SaudeController } from './comum/saude.controller';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { TermoPdfService } from './documentos/termo-pdf.service';
 import { PrismaService } from './prisma/prisma.service';
@@ -57,11 +59,14 @@ function segredoJwt(): string {
     CadastrosController,
     AuditoriaController,
     DashboardController,
+    SaudeController,
   ],
   providers: [
     PrismaService,
     AuditoriaService,
     AuthService,
+    EnvioService,
+    NotificacoesService,
     JwtAuthGuard,
     RolesGuard,
     LimiteGuard,
@@ -69,7 +74,6 @@ function segredoJwt(): string {
     AgendamentosService,
     ArmazenamentoService,
     TermoPdfService,
-    EnvioService,
     RsfSignerProvedor,
     AssinaturasService,
     VistoriasService,

@@ -339,7 +339,8 @@ model Envelope {
   concluidoEm DateTime?
   signatarios Signatario[]
 
-  @@index([provedor, idExterno])
+  // O mesmo envelope externo nunca responde por dois termos
+  @@unique([provedor, idExterno])
 }
 
 model Signatario {

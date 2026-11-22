@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -22,6 +23,7 @@ import {
 } from 'class-validator';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Contexto, Ctx } from '../comum/contexto';
+import { ETAPAS, ROTULO_STATUS } from '../comum/fluxo';
 import { UnidadesService } from './unidades.service';
 
 class CriarUnidadesDto {
@@ -83,6 +85,13 @@ class ObservacaoDto {
   observacao?: string;
 }
 
+class AnotacaoDto {
+  @IsString()
+  @MinLength(3, { message: 'Escreva a anotação' })
+  @MaxLength(2000)
+  texto: string;
+}
+
 class ResolverPendenciaDto {
   @IsString()
   @MinLength(5, { message: 'Descreva o que foi feito (mínimo de 5 caracteres)' })
@@ -98,6 +107,30 @@ export class UnidadesController {
   @Get('unidades')
   listar(@Query() f: FiltroUnidadesDto, @Ctx() ctx: Contexto) {
     return this.unidades.listar(ctx.usuario, f);
+  }
+
+  // Planilha das unidades (com os mesmos filtros da lista)
+  @Get('unidades/exportar.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="unidades.csv"')
+  async exportar(@Query() f: FiltroUnidadesDto, @Ctx() ctx: Contexto) {
+    const unidades = await this.unidades.listar(ctx.usuario, f);
+    const celula = (v: unknown) => {
+      let s = v === null || v === undefined ? '' : String(v);
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const linhas = unidades.map((u) =>
+      [
+        u.empreendimento.codigo, u.empreendimento.nome, u.bloco, u.numero, u.andar, u.tipologia,
+        ETAPAS[u.etapa].ordem, ETAPAS[u.etapa].rotulo, ROTULO_STATUS[u.status],
+        u.cliente?.nome, u.pendenciasAbertas, u.atualizadoEm.toISOString(),
+      ]
+        .map(celula)
+        .join(';'),
+    );
+    const cabecalho = 'codigo;empreendimento;bloco;numero;andar;tipologia;etapa;descricaoEtapa;situacao;cliente;pendenciasAbertas;ultimaMudanca';
+    return '\uFEFF' + [cabecalho, ...linhas].join('\r\n');
   }
 
   @Post('unidades')
@@ -132,6 +165,11 @@ export class UnidadesController {
     @Ctx() ctx: Contexto,
   ) {
     return this.unidades.liberar(id, dto.observacao, ctx);
+  }
+
+  @Post('unidades/:id/anotacoes')
+  anotar(@Param('id') id: string, @Body() dto: AnotacaoDto, @Ctx() ctx: Contexto) {
+    return this.unidades.anotar(id, dto.texto.trim(), ctx);
   }
 
   @Post('pendencias/:id/resolver')
